@@ -47,34 +47,19 @@ jobs:
       - name: Build Android debug APK
         run: flutter build apk --debug
 
-      - name: Sign APK with persistent keystore
-        env:
-          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
-        run: |
-          echo "$DEBUG_KEYSTORE_B64" | base64 --decode > /tmp/debug.keystore
-          APK="build/app/outputs/flutter-apk/app-debug.apk"
-          APKSIGNER=$(find "$ANDROID_HOME" -name apksigner -type f 2>/dev/null | head -1)
-          if [ -z "$APKSIGNER" ]; then
-            echo "apksigner not found, trying jarsigner with JKS conversion"
-            keytool -importkeystore -srckeystore /tmp/debug.keystore \
-              -srcstorepass android -srcstoretype pkcs12 \
-              -destkeystore /tmp/debug.jks -deststorepass android -deststoretype jks \
-              -noprompt 2>/dev/null
-            jarsigner -keystore /tmp/debug.jks \
-              -storepass android -keypass android \
-              -signedjar /tmp/app-signed.apk "$APK" androiddebugkey
-            mv /tmp/app-signed.apk "$APK"
-          else
-            "$APKSIGNER" sign --ks /tmp/debug.keystore \
-              --ks-key-alias androiddebugkey \
-              --ks-pass pass:android \
-              --key-pass pass:android \
-              "$APK"
-          fi
+      - name: Sign APK
+        uses: ilharp/sign-android-release@v2.0.0
+        with:
+          releaseDir: build/app/outputs/flutter-apk/
+          signingKey: ${{ secrets.KEYSTORE }}
+          keyAlias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          buildToolsVersion: 35.0.0
 
-      - name: Upload APK
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: chatmorphism-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          path: build/app/outputs/flutter-apk/*-signed.apk
           if-no-files-found: error
