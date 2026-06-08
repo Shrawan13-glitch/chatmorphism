@@ -4,8 +4,9 @@ import '../constants.dart';
 
 class AiResponse extends StatelessWidget {
   final String content;
+  final bool isStreaming;
 
-  const AiResponse({super.key, required this.content});
+  const AiResponse({super.key, required this.content, this.isStreaming = false});
 
   @override
   Widget build(BuildContext context) {
@@ -16,9 +17,18 @@ class AiResponse extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.92,
         ),
         padding: const EdgeInsets.only(right: 24),
-        child: MarkdownBody(
-          data: content,
-          selectable: true,
+        child: isStreaming
+            ? Text(
+                content,
+                style: TextStyle(
+                  color: AppColors.textPrimary(context),
+                  fontSize: 15,
+                  height: 1.6,
+                ),
+              )
+            : MarkdownBody(
+                data: content,
+                selectable: true,
           styleSheet: MarkdownStyleSheet(
             h1: TextStyle(
               color: AppColors.textPrimary(context),

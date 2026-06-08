@@ -351,7 +351,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ThinkingBlock(content: seg.content, isStreaming: false),
           ));
         } else if (seg.content.isNotEmpty) {
-          segments.add(AiResponse(content: seg.content));
+          segments.add(AiResponse(content: seg.content, isStreaming: isStreaming));
         }
       }
       if (result.streamingThought != null) {
@@ -368,7 +368,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Display content directly
     if (message.content.isNotEmpty) {
-      segments.add(AiResponse(content: message.content));
+      segments.add(AiResponse(content: message.content, isStreaming: isStreaming));
     }
 
     return segments;

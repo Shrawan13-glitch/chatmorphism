@@ -151,12 +151,20 @@ class _ThinkingBlockState extends State<ThinkingBlock>
               if (_expanded)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  child: MarkdownBody(
-                    data: widget.content +
-                        (widget.isStreaming && widget.content.isNotEmpty
-                            ? ' ...'
-                            : ''),
-                    styleSheet: MarkdownStyleSheet(
+                  child: widget.isStreaming
+                      ? Text(
+                          widget.content +
+                              (widget.content.isNotEmpty ? ' ...' : ''),
+                          style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 12,
+                            height: 1.5,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        )
+                      : MarkdownBody(
+                          data: widget.content,
+                          styleSheet: MarkdownStyleSheet(
                       p: TextStyle(
                         color: AppColors.textSecondary(context),
                         fontSize: 12,
