@@ -11,6 +11,7 @@ import '../widgets/ai_response.dart';
 import '../widgets/typing_indicator.dart';
 import '../widgets/model_selector.dart';
 import '../widgets/tool_call_card.dart';
+import '../widgets/thinking_block.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback onMenuTap;
@@ -333,20 +334,49 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  static final RegExp _markerRe = RegExp(r'\x00tool:(\d+)\x00');
+  static final RegExp _toolMarkerRe = RegExp(r'\x00tool:(\d+)\x00');
+  static final RegExp _thoughtRe =
+      RegExp(r'<thinking>(.*?)</thinking>', dotAll: true);
 
   List<Widget> _buildContentSegments(BuildContext context, Message message) {
     final toolCalls = _extractToolCalls(message);
     final content = message.content;
 
     if (content.isEmpty) return [];
-    if (toolCalls.isEmpty) return [AiResponse(content: content)];
 
     final segments = <Widget>[];
     int lastEnd = 0;
 
-    for (final match in _markerRe.allMatches(content)) {
-      final textBefore = content.substring(lastEnd, match.start);
+    for (final match in _thoughtRe.allMatches(content)) {
+      if (match.start > lastEnd) {
+        segments.addAll(_buildTextSegments(
+            context, content.substring(lastEnd, match.start), toolCalls));
+      }
+      segments.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: ThinkingBlock(content: match.group(1)!),
+      ));
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < content.length) {
+      segments.addAll(
+          _buildTextSegments(context, content.substring(lastEnd), toolCalls));
+    }
+
+    return segments;
+  }
+
+  List<Widget> _buildTextSegments(
+      BuildContext context, String text, List<ToolCall> toolCalls) {
+    if (text.isEmpty) return [];
+    if (toolCalls.isEmpty) return [AiResponse(content: text)];
+
+    final segments = <Widget>[];
+    int lastEnd = 0;
+
+    for (final match in _toolMarkerRe.allMatches(text)) {
+      final textBefore = text.substring(lastEnd, match.start);
       if (textBefore.isNotEmpty) {
         segments.add(Padding(
           padding: const EdgeInsets.only(bottom: 4),
@@ -365,7 +395,7 @@ class _ChatScreenState extends State<ChatScreen> {
       lastEnd = match.end;
     }
 
-    final textAfter = content.substring(lastEnd);
+    final textAfter = text.substring(lastEnd);
     if (textAfter.isNotEmpty) {
       segments.add(AiResponse(content: textAfter));
     }
