@@ -6,7 +6,31 @@ import '../models/ai_model.dart';
 class StreamChunk {
   final String content;
   final String? reasoning;
-  const StreamChunk({this.content = '', this.reasoning});
+
+  /// Emitted when a new tool call first appears in the stream (has id + name).
+  final ToolCallStart? toolCallStarted;
+
+  /// Emitted when a tool call gets additional arguments in a delta.
+  final ToolCallArgs? toolCallArgs;
+
+  const StreamChunk({
+    this.content = '',
+    this.reasoning,
+    this.toolCallStarted,
+    this.toolCallArgs,
+  });
+}
+
+class ToolCallStart {
+  final String id;
+  final String name;
+  const ToolCallStart({required this.id, required this.name});
+}
+
+class ToolCallArgs {
+  final String id;
+  final String arguments;
+  const ToolCallArgs({required this.id, required this.arguments});
 }
 
 class ToolCallData {
@@ -96,10 +120,14 @@ class OpenRouterService {
   }
 
   /// Sends messages with optional tool definitions and streams the response.
-  /// Returns a [ToolStreamResult] with:
-  /// - [stream]: text/reasoning deltas in real-time
-  /// - [toolCalls]: resolves after stream ends with any tool calls made
-  /// - [finishReason]: resolves after stream ends with the stop reason
+  ///
+  /// The [stream] emits [StreamChunk]s in real-time as they arrive:
+  /// - [StreamChunk.content] — text delta
+  /// - [StreamChunk.reasoning] — reasoning delta
+  /// - [StreamChunk.toolCallStarted] — a new tool call first appears
+  /// - [StreamChunk.toolCallArgs] — tool call arguments delta
+  ///
+  /// After the stream ends, [toolCalls] resolves with the complete list.
   static ToolStreamResult sendMessageStream({
     required String apiKey,
     required String model,
@@ -184,7 +212,6 @@ class OpenRouterService {
       }
 
       // Accumulate tool calls from streaming deltas
-      // Map from index to ToolCallAccumulator
       final toolCallAccumulators = <int, _ToolCallAccumulator>{};
 
       await for (final chunk in response.stream
@@ -204,21 +231,22 @@ class OpenRouterService {
         final delta = choices[0]['delta'] as Map<String, dynamic>?;
         if (delta == null) continue;
 
+        // --- text content ---
         final content = delta['content'] as String?;
+        if (content != null && content.isNotEmpty) {
+          controller.add(StreamChunk(content: content));
+        }
 
+        // --- reasoning ---
         String? reasoning = delta['reasoning_content'] as String?;
         if (reasoning == null || reasoning.isEmpty) {
           reasoning = delta['reasoning'] as String?;
-        }
-
-        if (content != null && content.isNotEmpty) {
-          controller.add(StreamChunk(content: content));
         }
         if (reasoning != null && reasoning.isNotEmpty) {
           controller.add(StreamChunk(reasoning: reasoning));
         }
 
-        // Detect tool calls in delta
+        // --- tool calls (emitted live during streaming) ---
         final toolCallsDelta = delta['tool_calls'] as List<dynamic>?;
         if (toolCallsDelta != null) {
           for (final tc in toolCallsDelta) {
@@ -228,10 +256,15 @@ class OpenRouterService {
             final func = tcMap['function'] as Map<String, dynamic>?;
 
             if (!toolCallAccumulators.containsKey(index)) {
+              // First delta for this tool call — emit start event
+              final name = func?['name'] as String? ?? '';
               toolCallAccumulators[index] = _ToolCallAccumulator(
                 id: id ?? '',
-                name: func?['name'] as String? ?? '',
+                name: name,
               );
+              controller.add(StreamChunk(
+                toolCallStarted: ToolCallStart(id: id ?? '', name: name),
+              ));
             }
 
             final accumulator = toolCallAccumulators[index]!;
@@ -244,7 +277,15 @@ class OpenRouterService {
                 accumulator.name = func['name'] as String;
               }
               if (func['arguments'] is String) {
-                accumulator.argumentsBuffer += func['arguments'] as String;
+                final argsDelta = func['arguments'] as String;
+                accumulator.argumentsBuffer += argsDelta;
+                // Emit arguments delta in real-time
+                controller.add(StreamChunk(
+                  toolCallArgs: ToolCallArgs(
+                    id: accumulator.id,
+                    arguments: argsDelta,
+                  ),
+                ));
               }
             }
           }
@@ -259,7 +300,7 @@ class OpenRouterService {
         }
       }
 
-      // Finalize tool calls - parse JSON arguments
+      // Finalize tool calls — parse accumulated JSON arguments
       final completedCalls = <ToolCallData>[];
       for (final acc in toolCallAccumulators.values) {
         Map<String, dynamic> parsedArgs = {};
@@ -268,7 +309,6 @@ class OpenRouterService {
             parsedArgs =
                 jsonDecode(acc.argumentsBuffer) as Map<String, dynamic>;
           } catch (_) {
-            // If JSON parsing fails, pass raw string
             parsedArgs = {'raw': acc.argumentsBuffer};
           }
         }
@@ -299,7 +339,6 @@ class OpenRouterService {
     }
   }
 
-  /// Builds a tool result message for sending back to the API.
   static Map<String, dynamic> makeToolResultMessage({
     required String toolCallId,
     required String content,
@@ -311,7 +350,6 @@ class OpenRouterService {
     };
   }
 
-  /// Builds a tool definition in OpenAI-compatible format.
   static Map<String, dynamic> makeToolDefinition({
     required String name,
     required String description,
@@ -336,7 +374,6 @@ class OpenRouterService {
   }
 }
 
-/// Internal class to accumulate tool call arguments during streaming.
 class _ToolCallAccumulator {
   String id;
   String name;

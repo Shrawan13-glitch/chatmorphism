@@ -272,6 +272,7 @@ class ChatProvider extends ChangeNotifier {
 
         final buffer = StringBuffer();
         final reasoningBuffer = StringBuffer();
+        final toolCallBuilders = <String, _ToolCallBuilder>{};
 
         await for (final chunk in result.stream) {
           if (chunk.content.isNotEmpty) {
@@ -282,25 +283,64 @@ class ChatProvider extends ChangeNotifier {
             reasoningBuffer.write(chunk.reasoning);
             aiMessage.reasoning = (aiMessage.reasoning ?? '') + chunk.reasoning!;
           }
-          notifyListeners();
+
+          // Tool call start — add a "Running..." entry to the message immediately
+          if (chunk.toolCallStarted != null) {
+            final ts = chunk.toolCallStarted!;
+            toolCallBuilders[ts.id] = _ToolCallBuilder(id: ts.id, name: ts.name);
+            aiMessage.toolCalls ??= [];
+            aiMessage.toolCalls!.add(ToolCall(
+              id: ts.id,
+              name: ts.name,
+              arguments: {},
+            ));
+            notifyListeners();
+          }
+
+          // Tool call args — accumulate and try to show partial JSON
+          if (chunk.toolCallArgs != null) {
+            final ta = chunk.toolCallArgs!;
+            final builder = toolCallBuilders[ta.id];
+            if (builder != null) {
+              builder.argumentsBuffer.write(ta.arguments);
+              // Attempt partial parse for display
+              try {
+                builder.parsed =
+                    jsonDecode(builder.argumentsBuffer.toString())
+                        as Map<String, dynamic>;
+              } catch (_) {}
+              // Update the existing tool call entry on the message
+              final idx = aiMessage.toolCalls
+                  ?.indexWhere((t) => t.id == ta.id);
+              if (idx != null && idx >= 0 && idx < (aiMessage.toolCalls?.length ?? 0)) {
+                aiMessage.toolCalls![idx].arguments =
+                    builder.parsed ?? {};
+                notifyListeners();
+              }
+            }
+          }
         }
 
+        // After stream: latest parsed args from the builder
         final toolCalls = await result.toolCalls;
         if (toolCalls.isEmpty) break;
 
-        // Record tool calls on the message for UI display
-        final msgToolCalls = <ToolCall>[];
+        // Update any tool calls that were streamed live with final parsed args
         for (final tc in toolCalls) {
-          msgToolCalls.add(ToolCall(
-            id: tc.id,
-            name: tc.name,
-            arguments: tc.arguments,
-          ));
+          final idx =
+              aiMessage.toolCalls?.indexWhere((t) => t.id == tc.id);
+          if (idx != null && idx >= 0 && idx < (aiMessage.toolCalls?.length ?? 0)) {
+            aiMessage.toolCalls![idx].arguments = tc.arguments;
+          } else {
+            // Tool call wasn't streamed (shouldn't happen) — add now
+            aiMessage.toolCalls ??= [];
+            aiMessage.toolCalls!.add(ToolCall(
+              id: tc.id,
+              name: tc.name,
+              arguments: tc.arguments,
+            ));
+          }
         }
-        aiMessage.toolCalls = [
-          ...?aiMessage.toolCalls,
-          ...msgToolCalls,
-        ];
         notifyListeners();
 
         // Record the assistant message with tool calls for the API context
@@ -321,18 +361,17 @@ class ChatProvider extends ChangeNotifier {
         _toolMessages.add(assistantMsg);
 
         // Execute each tool call
-        for (var i = 0; i < toolCalls.length; i++) {
-          final tc = toolCalls[i];
+        for (final tc in toolCalls) {
           String resultContent;
 
           try {
             resultContent = await _executeTool(tc.name, tc.arguments);
-            msgToolCalls[i].completed = true;
-            msgToolCalls[i].result = resultContent;
+            _updateToolCallState(aiMessage, tc.id,
+                completed: true, result: resultContent);
           } catch (e) {
             resultContent = 'Error executing tool "${tc.name}": $e';
-            msgToolCalls[i].error = true;
-            msgToolCalls[i].result = resultContent;
+            _updateToolCallState(aiMessage, tc.id,
+                error: true, result: resultContent);
           }
           notifyListeners();
 
@@ -355,8 +394,20 @@ class ChatProvider extends ChangeNotifier {
 
       notifyListeners();
 
-      await _db.updateMessageContent(aiMessage.id, aiMessage.content,
-          reasoning: aiMessage.reasoning);
+      // Build metadata including tool calls for persistence
+      final meta = <String, dynamic>{
+        ...?aiMessage.metadata,
+      };
+      if (aiMessage.toolCalls != null && aiMessage.toolCalls!.isNotEmpty) {
+        meta['tool_calls'] =
+            aiMessage.toolCalls!.map((tc) => tc.toJson()).toList();
+      }
+      await _db.updateMessageContent(
+        aiMessage.id,
+        aiMessage.content,
+        reasoning: aiMessage.reasoning,
+        metadata: meta.isNotEmpty ? jsonEncode(meta) : null,
+      );
     } on OpenRouterException catch (e) {
       _messages.remove(aiMessage);
       await _db.deleteMessage(aiMessage.id);
@@ -514,4 +565,28 @@ class ChatProvider extends ChangeNotifier {
     if (text.length <= 40) return text;
     return '${text.substring(0, 40)}...';
   }
+
+  void _updateToolCallState(
+    Message msg,
+    String toolCallId, {
+    bool? completed,
+    bool? error,
+    String? result,
+  }) {
+    final idx = msg.toolCalls?.indexWhere((t) => t.id == toolCallId);
+    if (idx == null || idx < 0 || idx >= (msg.toolCalls?.length ?? 0)) return;
+    final tc = msg.toolCalls![idx];
+    if (completed != null) tc.completed = completed;
+    if (error != null) tc.error = error;
+    if (result != null) tc.result = result;
+  }
+}
+
+class _ToolCallBuilder {
+  final String id;
+  final String name;
+  final StringBuffer argumentsBuffer = StringBuffer();
+  Map<String, dynamic>? parsed;
+
+  _ToolCallBuilder({required this.id, required this.name});
 }

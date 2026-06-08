@@ -126,11 +126,14 @@ class DatabaseHelper {
   }
 
   Future<void> updateMessageContent(String id, String content,
-      {String? reasoning}) async {
+      {String? reasoning, String? metadata}) async {
     final db = await database;
     final values = <String, dynamic>{'content': content};
     if (reasoning != null) {
       values['reasoning'] = reasoning;
+    }
+    if (metadata != null) {
+      values['metadata'] = metadata;
     }
     await db.update(
       'messages',

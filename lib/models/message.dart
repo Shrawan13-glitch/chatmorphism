@@ -3,7 +3,7 @@ import 'dart:convert';
 class ToolCall {
   final String id;
   final String name;
-  final Map<String, dynamic> arguments;
+  Map<String, dynamic> arguments;
   String? result;
   bool completed;
   bool error;
@@ -16,6 +16,24 @@ class ToolCall {
     this.completed = false,
     this.error = false,
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'arguments': arguments,
+        'result': result,
+        'completed': completed,
+        'error': error,
+      };
+
+  factory ToolCall.fromJson(Map<String, dynamic> json) => ToolCall(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        arguments: (json['arguments'] as Map<String, dynamic>?) ?? {},
+        result: json['result'] as String?,
+        completed: json['completed'] as bool? ?? false,
+        error: json['error'] as bool? ?? false,
+      );
 }
 
 class Message {
@@ -27,8 +45,8 @@ class Message {
   final DateTime createdAt;
   Map<String, dynamic>? metadata;
 
-  /// In-memory tool calls attached to this assistant message.
-  /// Not persisted to the database.
+  /// Tool calls attached to this assistant message.
+  /// Persisted inside [metadata] as JSON.
   List<ToolCall>? toolCalls;
 
   Message({
@@ -46,6 +64,12 @@ class Message {
   bool get isAssistant => role == 'assistant';
 
   Map<String, dynamic> toMap() {
+    final meta = <String, dynamic>{
+      ...?metadata,
+    };
+    if (toolCalls != null && toolCalls!.isNotEmpty) {
+      meta['tool_calls'] = toolCalls!.map((tc) => tc.toJson()).toList();
+    }
     return {
       'id': id,
       'chat_id': chatId,
@@ -53,11 +77,20 @@ class Message {
       'content': content,
       'reasoning': reasoning,
       'created_at': createdAt.toIso8601String(),
-      'metadata': metadata != null ? jsonEncode(metadata) : null,
+      'metadata': meta.isNotEmpty ? jsonEncode(meta) : null,
     };
   }
 
   factory Message.fromMap(Map<String, dynamic> map) {
+    List<ToolCall>? toolCalls;
+    final meta = map['metadata'] != null
+        ? jsonDecode(map['metadata'] as String) as Map<String, dynamic>
+        : null;
+    if (meta != null && meta['tool_calls'] is List) {
+      toolCalls = (meta['tool_calls'] as List)
+          .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
     return Message(
       id: map['id'] as String,
       chatId: map['chat_id'] as String,
@@ -65,9 +98,8 @@ class Message {
       content: map['content'] as String,
       reasoning: map['reasoning'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
-      metadata: map['metadata'] != null
-          ? jsonDecode(map['metadata'] as String) as Map<String, dynamic>
-          : null,
+      metadata: meta,
+      toolCalls: toolCalls,
     );
   }
 }
