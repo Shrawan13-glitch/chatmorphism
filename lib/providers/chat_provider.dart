@@ -206,10 +206,16 @@ class ChatProvider extends ChangeNotifier {
         messages: _buildApiMessages(),
       );
 
+      int lastNotify = 0;
       await for (final chunk in stream) {
         aiMessage.content += chunk;
-        notifyListeners();
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - lastNotify > 50) {
+          notifyListeners();
+          lastNotify = now;
+        }
       }
+      notifyListeners();
 
       await _db.updateMessageContent(aiMessage.id, aiMessage.content);
     } on OpenRouterException catch (e) {

@@ -9,7 +9,8 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.dark;
   String _apiKey = '';
   String _defaultModel = '';
-  String _systemPrompt = defaultPrompt;
+  String _appPrompt = defaultAppPrompt;
+  String _userPrompt = '';
   List<String> _favoriteModelIds = [];
   List<AiModel> _availableModels = [];
   bool _modelsLoaded = false;
@@ -17,13 +18,18 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   String get apiKey => _apiKey;
   String get defaultModel => _defaultModel;
-  String get systemPrompt => _systemPrompt;
+  String get appPrompt => _appPrompt;
+  String get userPrompt => _userPrompt;
+  String get systemPrompt {
+    if (_userPrompt.trim().isEmpty) return _appPrompt;
+    return '$_appPrompt\n\n$_userPrompt';
+  }
   List<String> get favoriteModelIds => _favoriteModelIds;
   List<AiModel> get availableModels => _availableModels;
   bool get modelsLoaded => _modelsLoaded;
   bool get hasApiKey => _apiKey.isNotEmpty;
 
-  static const String defaultPrompt = '''You are ChatMorphism, a helpful AI assistant.
+  static const String defaultAppPrompt = '''You are ChatMorphism, a helpful AI assistant.
 
 Always think step-by-step before answering every question, no matter how simple. Show your internal reasoning inside <thinking> tags:
 
@@ -63,8 +69,11 @@ Always use <thinking> tags. Be thorough in your reasoning.''';
 
     _apiKey = (await _db.getSetting('api_key')) ?? '';
     _defaultModel = (await _db.getSetting('default_model')) ?? '';
-    _systemPrompt =
-        (await _db.getSetting('system_prompt')) ?? defaultPrompt;
+    _appPrompt = (await _db.getSetting('app_prompt')) ??
+        (await _db.getSetting('system_prompt')) ??
+        defaultAppPrompt;
+    await _db.deleteSetting('system_prompt');
+    _userPrompt = (await _db.getSetting('user_prompt')) ?? '';
 
     final favIds = await _db.getSetting('favorite_models');
     if (favIds != null && favIds.isNotEmpty) {
@@ -99,9 +108,15 @@ Always use <thinking> tags. Be thorough in your reasoning.''';
     notifyListeners();
   }
 
-  Future<void> setSystemPrompt(String prompt) async {
-    _systemPrompt = prompt;
-    await _db.setSetting('system_prompt', prompt);
+  Future<void> setAppPrompt(String prompt) async {
+    _appPrompt = prompt;
+    await _db.setSetting('app_prompt', prompt);
+    notifyListeners();
+  }
+
+  Future<void> setUserPrompt(String prompt) async {
+    _userPrompt = prompt;
+    await _db.setSetting('user_prompt', prompt);
     notifyListeners();
   }
 

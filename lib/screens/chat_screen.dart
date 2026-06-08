@@ -231,9 +231,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   );
                 }
 
-                return Padding(
-                  key: ValueKey(message.id),
-                  padding: EdgeInsets.only(
+                return RepaintBoundary(
+                  child: Padding(
+                    key: ValueKey(message.id),
+                    padding: EdgeInsets.only(
                     bottom: message.isUser ? 12 : 16,
                   ),
                   child: Column(
@@ -281,7 +282,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ],
                   ),
-                );
+                ),
+              );
               },
             ),
             if (_showScrollButton)

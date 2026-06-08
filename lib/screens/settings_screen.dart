@@ -4,6 +4,8 @@ import '../constants.dart';
 import '../providers/settings_provider.dart';
 import '../providers/chat_provider.dart';
 import 'models_screen.dart';
+import 'system_prompt_screen.dart';
+import 'app_prompt_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -41,6 +43,12 @@ class SettingsScreen extends StatelessWidget {
           _buildSectionHeader(context, 'Appearance'),
           const SizedBox(height: 8),
           _buildThemeSelector(context),
+          const SizedBox(height: 24),
+          _buildSectionHeader(context, 'Configuration'),
+          const SizedBox(height: 8),
+          _buildSystemPromptTile(context),
+          const SizedBox(height: 4),
+          _buildAppPromptTile(context),
           const SizedBox(height: 24),
           _buildSectionHeader(context, 'Providers'),
           const SizedBox(height: 8),
@@ -193,6 +201,137 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSystemPromptTile(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border(context)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SystemPromptScreen()),
+          ),
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(Icons.description_outlined,
+                    size: 22,
+                    color: AppColors.textSecondary(context)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('System Prompt',
+                          style: TextStyle(
+                              color: AppColors.textPrimary(context),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Controls model behavior and reasoning',
+                        style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppPromptTile(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: InkWell(
+        onTap: () => _showAppPromptWarning(context),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          child: Row(
+            children: [
+              Icon(Icons.tune_rounded,
+                  size: 14, color: AppColors.textSecondary(context).withValues(alpha: 0.4)),
+              const SizedBox(width: 8),
+              Text(
+                'Behavior prompt',
+                style: TextStyle(
+                  color: AppColors.textSecondary(context).withValues(alpha: 0.4),
+                  fontSize: 12,
+                ),
+              ),
+              const Spacer(),
+              Icon(Icons.chevron_right_rounded,
+                  size: 16,
+                  color: AppColors.textSecondary(context).withValues(alpha: 0.3)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAppPromptWarning(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface(context),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: AppColors.error, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('App behavior prompt',
+                  style: TextStyle(color: AppColors.textPrimary(ctx))),
+            ),
+          ],
+        ),
+        content: Text(
+          'This prompt controls how the model thinks and structures its responses. '
+          'Changing it may affect response quality. '
+          'The app always prepends this to your custom instructions.',
+          style: TextStyle(color: AppColors.textSecondary(ctx), fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary(ctx))),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AppPromptScreen()),
+              );
+            },
+            child: const Text('Edit anyway',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
       ),
     );
   }
