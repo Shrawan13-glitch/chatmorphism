@@ -357,10 +357,14 @@ class _ChatScreenState extends State<ChatScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
+              alignment: WrapAlignment.center,
               children: [
-                _buildSuggestionChip(context, 'Write a Flutter widget'),
-                _buildSuggestionChip(context, 'Explain state management'),
-                _buildSuggestionChip(context, 'Tell me a joke'),
+                _buildSuggestionChip(context, 'Explain quantum computing like I\'m 10'),
+                _buildSuggestionChip(context, 'Write a poem about the future of AI'),
+                _buildSuggestionChip(context, 'Help me plan a 5-day trip to Japan'),
+                _buildSuggestionChip(context, 'What\'s the meaning of life?'),
+                _buildSuggestionChip(context, 'Debug this Flutter code: final list = [1, 2, 3]; list.add(4);'),
+                _buildSuggestionChip(context, 'Tell me a mind-blowing science fact'),
               ],
             ),
           ],
@@ -375,10 +379,10 @@ class _ChatScreenState extends State<ChatScreen> {
         context.read<ChatProvider>().sendMessage(text);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.surfaceLight(context),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.border(context)),
         ),
         child: Text(
@@ -386,6 +390,7 @@ class _ChatScreenState extends State<ChatScreen> {
           style: TextStyle(
             color: AppColors.textSecondary(context),
             fontSize: 13,
+            height: 1.3,
           ),
         ),
       ),

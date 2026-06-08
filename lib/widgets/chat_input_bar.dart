@@ -68,9 +68,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     width: 1,
                   ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
                     const SizedBox(width: 4),
                     Expanded(
                       child: TextField(
@@ -83,7 +85,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           height: 1.4,
                         ),
                         decoration: InputDecoration(
-                          hintText: 'Message ChatMorphism...',
+                          hintText: 'Ask anything...',
                           hintStyle: TextStyle(
                             color: AppColors.textSecondary(context),
                           ),
@@ -136,7 +138,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           ),
                         ),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
