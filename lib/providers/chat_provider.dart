@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../database/database_helper.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../models/thread_entry.dart';
 import '../services/openrouter_provider.dart';
 import '../services/generation_manager.dart';
 import '../services/openrouter_service.dart';
@@ -246,6 +247,9 @@ class ChatProvider extends ChangeNotifier {
             meta['tool_calls'] =
                 aiMessage.toolCalls!.map((tc) => tc.toJson()).toList();
           }
+          if (aiMessage.entries.isNotEmpty) {
+            meta['entries'] = ThreadEntry.listToJson(aiMessage.entries);
+          }
           await _db.updateMessageContent(
             aiMessage.id,
             aiMessage.content,
@@ -277,10 +281,12 @@ class ChatProvider extends ChangeNotifier {
     switch (event) {
       case GenTextChunk(:final text):
         aiMessage.content += text;
+        _appendOrExtendEntry(aiMessage, TextEntry(text, isStreaming: true));
         notifyListeners();
 
       case GenThoughtChunk(:final thought):
         aiMessage.reasoning = (aiMessage.reasoning ?? '') + thought;
+        _appendOrExtendEntry(aiMessage, ThinkingEntry(thought, isStreaming: true));
         notifyListeners();
 
       case GenToolCallStart(:final id, :final name, :final arguments):
@@ -295,6 +301,13 @@ class ChatProvider extends ChangeNotifier {
         } else {
           aiMessage.toolCalls![existing].arguments = arguments;
         }
+        _finalizeStreamingEntries(aiMessage);
+        aiMessage.entries.add(ToolCallEntry(
+          toolCallId: id,
+          toolName: name,
+          toolArguments: arguments,
+          isExecuting: true,
+        ));
         notifyListeners();
 
       case GenToolCallResult(:final id, :final success, :final result):
@@ -304,22 +317,70 @@ class ChatProvider extends ChangeNotifier {
           tc.completed = success;
           tc.error = !success;
           tc.result = result;
-          notifyListeners();
         }
+        for (final entry in aiMessage.entries) {
+          if (entry is ToolCallEntry && entry.toolCallId == id) {
+            entry.completed = success;
+            entry.error = !success;
+            entry.result = result;
+            entry.isExecuting = false;
+            break;
+          }
+        }
+        notifyListeners();
 
       case GenUsage():
         break;
 
       case GenError(:final message):
         aiMessage.content += '\n\nError: $message';
+        aiMessage.entries.add(TextEntry('\n\nError: $message'));
         notifyListeners();
 
       case GenDone():
+        for (var i = 0; i < aiMessage.entries.length; i++) {
+          final entry = aiMessage.entries[i];
+          if (entry is ThinkingEntry && entry.isStreaming) {
+            aiMessage.entries[i] = ThinkingEntry(entry.content);
+          } else if (entry is TextEntry && entry.isStreaming) {
+            aiMessage.entries[i] = TextEntry(entry.content);
+          }
+        }
         break;
 
       case GenTurnEnd():
-        // Tool loop continues in generation manager
         break;
+    }
+  }
+
+  void _appendOrExtendEntry(Message msg, ThreadEntry newEntry) {
+    if (msg.entries.isEmpty) {
+      msg.entries.add(newEntry);
+      return;
+    }
+
+    final last = msg.entries.last;
+    if (newEntry is ThinkingEntry && last is ThinkingEntry && last.isStreaming) {
+      last.content += newEntry.content;
+      return;
+    }
+    if (newEntry is TextEntry && last is TextEntry && last.isStreaming) {
+      last.content += newEntry.content;
+      return;
+    }
+
+    _finalizeStreamingEntries(msg);
+    msg.entries.add(newEntry);
+  }
+
+  void _finalizeStreamingEntries(Message msg) {
+    for (var i = 0; i < msg.entries.length; i++) {
+      final entry = msg.entries[i];
+      if (entry is ThinkingEntry && entry.isStreaming) {
+        msg.entries[i] = ThinkingEntry(entry.content);
+      } else if (entry is TextEntry && entry.isStreaming) {
+        msg.entries[i] = TextEntry(entry.content);
+      }
     }
   }
 
@@ -457,8 +518,18 @@ class ChatProvider extends ChangeNotifier {
       final cleanedContent = textParts.join('');
       msg.reasoning = reasoning;
       msg.content = cleanedContent;
+      msg.entries = Message.buildLegacyEntries(
+        reasoning: reasoning,
+        content: cleanedContent,
+        toolCalls: msg.toolCalls,
+      );
+      final meta = <String, dynamic>{...?msg.metadata};
+      if (msg.entries.isNotEmpty) {
+        meta['entries'] = ThreadEntry.listToJson(msg.entries);
+      }
       await _db.updateMessageContent(msg.id, cleanedContent,
-          reasoning: reasoning);
+          reasoning: reasoning,
+          metadata: meta.isNotEmpty ? jsonEncode(meta) : null);
     }
   }
 
@@ -474,6 +545,12 @@ class ChatProvider extends ChangeNotifier {
         .where((s) => !s.isThinking)
         .map((s) => s.content)
         .join('');
+
+    msg.entries = Message.buildLegacyEntries(
+      reasoning: msg.reasoning,
+      content: msg.content,
+      toolCalls: msg.toolCalls,
+    );
   }
 
   static bool _hasThinkTags(String content) {

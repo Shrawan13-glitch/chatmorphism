@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'thread_entry.dart';
 
 class ToolCall {
   final String id;
@@ -49,6 +50,10 @@ class Message {
   /// Persisted inside [metadata] as JSON.
   List<ToolCall>? toolCalls;
 
+  /// Ordered thread entries for UI rendering.
+  /// Persisted inside [metadata] as JSON.
+  List<ThreadEntry> entries = [];
+
   Message({
     required this.id,
     required this.chatId,
@@ -58,7 +63,8 @@ class Message {
     required this.createdAt,
     this.metadata,
     this.toolCalls,
-  });
+    List<ThreadEntry>? entries,
+  }) : entries = entries ?? [];
 
   bool get isUser => role == 'user';
   bool get isAssistant => role == 'assistant';
@@ -69,6 +75,9 @@ class Message {
     };
     if (toolCalls != null && toolCalls!.isNotEmpty) {
       meta['tool_calls'] = toolCalls!.map((tc) => tc.toJson()).toList();
+    }
+    if (entries.isNotEmpty) {
+      meta['entries'] = ThreadEntry.listToJson(entries);
     }
     return {
       'id': id,
@@ -83,6 +92,7 @@ class Message {
 
   factory Message.fromMap(Map<String, dynamic> map) {
     List<ToolCall>? toolCalls;
+    List<ThreadEntry> entries = [];
     final meta = map['metadata'] != null
         ? jsonDecode(map['metadata'] as String) as Map<String, dynamic>
         : null;
@@ -90,6 +100,15 @@ class Message {
       toolCalls = (meta['tool_calls'] as List)
           .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
           .toList();
+    }
+    if (meta != null && meta['entries'] is List) {
+      entries = ThreadEntry.listFromJson(meta['entries'] as List);
+    } else {
+      entries = buildLegacyEntries(
+        reasoning: map['reasoning'] as String?,
+        content: map['content'] as String,
+        toolCalls: toolCalls,
+      );
     }
     return Message(
       id: map['id'] as String,
@@ -100,6 +119,34 @@ class Message {
       createdAt: DateTime.parse(map['created_at'] as String),
       metadata: meta,
       toolCalls: toolCalls,
+      entries: entries,
     );
+  }
+
+  static List<ThreadEntry> buildLegacyEntries({
+    String? reasoning,
+    required String content,
+    List<ToolCall>? toolCalls,
+  }) {
+    final entries = <ThreadEntry>[];
+    if (reasoning != null && reasoning.isNotEmpty) {
+      entries.add(ThinkingEntry(reasoning));
+    }
+    if (content.isNotEmpty) {
+      entries.add(TextEntry(content));
+    }
+    if (toolCalls != null) {
+      for (final tc in toolCalls) {
+        entries.add(ToolCallEntry(
+          toolCallId: tc.id,
+          toolName: tc.name,
+          toolArguments: tc.arguments,
+          completed: tc.completed,
+          error: tc.error,
+          result: tc.result,
+        ));
+      }
+    }
+    return entries;
   }
 }

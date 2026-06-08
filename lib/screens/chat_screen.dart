@@ -11,7 +11,7 @@ import '../widgets/typing_indicator.dart';
 import '../widgets/model_selector.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/tool_call_block.dart';
-import '../utils/content_parser.dart' show ContentParser;
+import '../models/thread_entry.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback onMenuTap;
@@ -222,8 +222,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     index == provider.messages.length - 1 &&
                     message.isAssistant;
 
-                if (isStreaming && message.content.isEmpty &&
-                    (message.reasoning == null || message.reasoning!.isEmpty)) {
+                if (isStreaming && message.entries.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: TypingIndicator(),
@@ -289,66 +288,49 @@ class _ChatScreenState extends State<ChatScreen> {
       BuildContext context, Message message, bool isStreaming) {
     final segments = <Widget>[];
 
-    // 1. Native reasoning from provider API (reasoning_content SSE field)
-    if (message.reasoning != null && message.reasoning!.isNotEmpty) {
-      segments.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: ThinkingBlock(
-          content: message.reasoning!,
-          isStreaming: isStreaming,
-        ),
-      ));
-    }
+    for (final entry in message.entries) {
+      switch (entry) {
+        case ThinkingEntry(:final content, :final isStreaming):
+          segments.add(Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ThinkingBlock(
+              content: content,
+              isStreaming: isStreaming,
+            ),
+          ));
 
-    // 2. Tool calls
-    if (message.toolCalls != null && message.toolCalls!.isNotEmpty) {
-      for (final tc in message.toolCalls!) {
-        segments.add(Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: ToolCallBlock(
-            toolCall: tc,
-            isStreaming: !tc.completed && !tc.error,
-          ),
-        ));
+        case TextEntry(:final content, :final isStreaming):
+          if (content.isNotEmpty) {
+            segments.add(AiResponse(
+              content: content,
+              isStreaming: isStreaming,
+            ));
+          }
+
+        case ToolCallEntry(
+            :final toolCallId,
+            :final toolName,
+            :final toolArguments,
+            :final completed,
+            :final error,
+            :final result,
+            :final isExecuting,
+          ):
+          segments.add(Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: ToolCallBlock(
+              toolCall: ToolCall(
+                id: toolCallId,
+                name: toolName,
+                arguments: toolArguments,
+                completed: completed,
+                error: error,
+                result: result,
+              ),
+              isStreaming: isExecuting,
+            ),
+          ));
       }
-    }
-
-    // 3. Content parser — extract <thinking> tags from content for models
-    //    that embed thinking inline (e.g. some OpenRouter models)
-    final sanitized = ContentParser.sanitize(message.content);
-    final result = ContentParser.parse(sanitized);
-    bool hasTextSegments = false;
-
-    // Completed segments in order
-    for (final seg in result.segments) {
-      if (seg.isThinking) {
-        segments.add(Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: ThinkingBlock(content: seg.content, isStreaming: false),
-        ));
-      } else if (seg.content.isNotEmpty) {
-        segments.add(AiResponse(content: seg.content, isStreaming: isStreaming));
-        hasTextSegments = true;
-      }
-    }
-
-    // Unclosed <thinking> tag during streaming — collapse below native reasoning / tool calls
-    if (result.streamingThought != null) {
-      segments.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: ThinkingBlock(
-          content: result.streamingThought!,
-          isStreaming: true,
-        ),
-      ));
-    }
-
-    // 4. If no segments at all (pure text, no tags), show content directly
-    if (!hasTextSegments &&
-        result.streamingThought == null &&
-        message.content.isNotEmpty &&
-        (message.reasoning == null || message.reasoning!.isEmpty)) {
-      segments.add(AiResponse(content: message.content, isStreaming: isStreaming));
     }
 
     return segments;
