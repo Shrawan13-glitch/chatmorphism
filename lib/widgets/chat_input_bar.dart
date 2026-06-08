@@ -99,44 +99,40 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     if (_hasText)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4, right: 4),
-                        child: AnimatedOpacity(
-                          opacity: _hasText ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 150),
-                          child: IconButton(
-                            onPressed: isGenerating ? null : _send,
-                            icon: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    AppColors.bubbleGradientStart,
-                                    AppColors.bubbleGradientEnd,
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(10),
+                        child: IconButton(
+                          onPressed: isGenerating ? null : _send,
+                          icon: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  AppColors.bubbleGradientStart,
+                                  AppColors.bubbleGradientEnd,
+                                ],
                               ),
-                              child: isGenerating
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.arrow_upward_rounded,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: isGenerating
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
                                       color: Colors.white,
-                                      size: 20,
                                     ),
-                            ),
-                            splashRadius: 20,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 36,
-                              minHeight: 36,
-                            ),
+                                  )
+                                : const Icon(
+                                    Icons.arrow_upward_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                          ),
+                          splashRadius: 20,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
                           ),
                         ),
                       ),

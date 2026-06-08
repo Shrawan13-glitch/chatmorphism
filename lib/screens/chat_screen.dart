@@ -89,16 +89,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: AppColors.textSecondary(context)),
                 splashRadius: 20,
               ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  provider.currentChat?.title ?? 'ChatMorphism',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+              const Spacer(),
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: ModelSelector(

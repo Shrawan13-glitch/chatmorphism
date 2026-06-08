@@ -109,10 +109,6 @@ class _ModelsScreenState extends State<ModelsScreen> {
             children: [
               _buildApiKeySection(context, settings),
               const SizedBox(height: 24),
-              if (settings.hasApiKey && settings.modelsLoaded)
-                _buildTitleModelSection(context, settings),
-              if (settings.hasApiKey && settings.modelsLoaded)
-                const SizedBox(height: 24),
               if (settings.hasApiKey) _buildModelsSection(context, settings),
             ],
           );
@@ -237,106 +233,6 @@ class _ModelsScreenState extends State<ModelsScreen> {
               ),
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _buildTitleModelSection(
-      BuildContext context, SettingsProvider settings) {
-    final favorites = settings.favoriteModels;
-    final current = settings.titleModel.isNotEmpty
-        ? settings.titleModel
-        : settings.defaultModel;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'TITLE GENERATION MODEL',
-          style: const TextStyle(
-            color: AppColors.primary,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface(context),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border(context)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: favorites.any((m) => m.id == current)
-                        ? current
-                        : null,
-                    isExpanded: true,
-                    hint: Text(
-                      settings.titleModel.isEmpty
-                          ? 'Use default model'
-                          : 'Select a model',
-                      style: TextStyle(
-                        color: AppColors.textSecondary(context),
-                        fontSize: 14,
-                      ),
-                    ),
-                    dropdownColor: AppColors.surface(context),
-                    style: TextStyle(
-                      color: AppColors.textPrimary(context),
-                      fontSize: 14,
-                    ),
-                    icon: Icon(Icons.expand_more_rounded,
-                        color: AppColors.textSecondary(context)),
-                    items: [
-                      DropdownMenuItem(
-                        value: '',
-                        child: Text(
-                          'Use default model',
-                          style: TextStyle(
-                            color: AppColors.textSecondary(context),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      ...favorites.map((model) => DropdownMenuItem(
-                            value: model.id,
-                            child: Text(
-                              model.displayName,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          )),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        settings.setTitleModel(value);
-                      }
-                    },
-                  ),
-                ),
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Text(
-                  settings.titleModel.isEmpty
-                      ? 'Uses your default model to generate chat titles'
-                      : 'Chat titles will use this model',
-                  style: TextStyle(
-                    color: AppColors.textSecondary(context),
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }

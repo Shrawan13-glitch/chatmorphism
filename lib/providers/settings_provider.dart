@@ -9,7 +9,6 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.dark;
   String _apiKey = '';
   String _defaultModel = '';
-  String _titleModel = '';
   List<String> _favoriteModelIds = [];
   List<AiModel> _availableModels = [];
   bool _modelsLoaded = false;
@@ -17,7 +16,6 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   String get apiKey => _apiKey;
   String get defaultModel => _defaultModel;
-  String get titleModel => _titleModel;
   List<String> get favoriteModelIds => _favoriteModelIds;
   List<AiModel> get availableModels => _availableModels;
   bool get modelsLoaded => _modelsLoaded;
@@ -49,13 +47,19 @@ class SettingsProvider extends ChangeNotifier {
 
     _apiKey = (await _db.getSetting('api_key')) ?? '';
     _defaultModel = (await _db.getSetting('default_model')) ?? '';
-    _titleModel = (await _db.getSetting('title_model')) ?? '';
 
     final favIds = await _db.getSetting('favorite_models');
     if (favIds != null && favIds.isNotEmpty) {
       _favoriteModelIds = (jsonDecode(favIds) as List)
           .map((e) => e.toString())
           .toList();
+    }
+
+    final cached = await _db.getSetting('cached_models');
+    if (cached != null && cached.isNotEmpty) {
+      final list = jsonDecode(cached) as List;
+      _availableModels = list.map((e) => AiModel.fromJson(e)).toList();
+      _modelsLoaded = true;
     }
   }
 
@@ -77,15 +81,10 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setTitleModel(String modelId) async {
-    _titleModel = modelId;
-    await _db.setSetting('title_model', modelId);
-    notifyListeners();
-  }
-
   Future<void> setAvailableModels(List<AiModel> models) async {
     _availableModels = models;
     _modelsLoaded = true;
+    await _db.setSetting('cached_models', jsonEncode(models.map((m) => m.toJson()).toList()));
     notifyListeners();
   }
 
@@ -117,6 +116,7 @@ class SettingsProvider extends ChangeNotifier {
     await _db.setSetting('api_key', '');
     await _db.setSetting('favorite_models', jsonEncode([]));
     await _db.setSetting('default_model', '');
+    await _db.setSetting('cached_models', '');
     notifyListeners();
   }
 }

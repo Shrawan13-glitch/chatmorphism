@@ -17,7 +17,7 @@ class ModelSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
 
-    if (!settings.hasApiKey || settings.favoriteModels.isEmpty) {
+    if (!settings.hasApiKey || !settings.modelsLoaded || settings.favoriteModels.isEmpty) {
       return const SizedBox.shrink();
     }
 
