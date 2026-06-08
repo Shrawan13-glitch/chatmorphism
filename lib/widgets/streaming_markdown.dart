@@ -87,11 +87,10 @@ class _StreamingMarkdownState extends State<StreamingMarkdown>
     }
 
     _wasStreaming = true;
-    final stripped = stripBlockquotes(content);
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 200), () {
       if (!mounted) return;
-      _scheduleCrossfade(stripped);
+      _scheduleCrossfade(widget.content);
     });
   }
 
@@ -132,16 +131,16 @@ class _StreamingMarkdownState extends State<StreamingMarkdown>
   Widget build(BuildContext context) {
     if (widget.content.isEmpty) return const SizedBox.shrink();
 
-    final comps = _components(context);
+    final ts = Theme.of(context);
 
     Widget body;
     if (widget.isStreaming) {
-      body = _buildStreaming(comps);
+      body = _buildStreaming(ts);
     } else {
       body = GptMarkdown(
         _displayContent,
         tableBuilder: tableWidget,
-        components: comps,
+        components: _components(context),
       );
     }
 
@@ -168,9 +167,14 @@ class _StreamingMarkdownState extends State<StreamingMarkdown>
     );
   }
 
-  Widget _buildStreaming(List<MarkdownComponent> comps) {
+  Widget _buildStreaming(ThemeData ts) {
     final bothNonEmpty = _buf0.isNotEmpty && _buf1.isNotEmpty;
     final doFade = _fading && bothNonEmpty;
+    final style = TextStyle(
+      color: ts.colorScheme.onSurface,
+      fontSize: 15,
+      height: 1.65,
+    );
 
     return AnimatedBuilder(
       animation: _fadeAnim,
@@ -183,22 +187,14 @@ class _StreamingMarkdownState extends State<StreamingMarkdown>
                 opacity: _front == 0
                     ? (doFade ? 1.0 - alpha : 1.0)
                     : (doFade ? alpha : 0.0),
-                child: GptMarkdown(
-                  _buf0,
-                  tableBuilder: tableWidget,
-                  components: comps,
-                ),
+                child: Text(_buf0, style: style),
               ),
             if (_buf1.isNotEmpty)
               Opacity(
                 opacity: _front == 1
                     ? (doFade ? 1.0 - alpha : 1.0)
                     : (doFade ? alpha : 0.0),
-                child: GptMarkdown(
-                  _buf1,
-                  tableBuilder: tableWidget,
-                  components: comps,
-                ),
+                child: Text(_buf1, style: style),
               ),
           ],
         );
