@@ -103,6 +103,7 @@ class OpenRouterService {
         'model': model,
         'messages': messages,
         'stream': true,
+        'reasoning': {'effort': 'medium'},
       });
 
       final response = await client.send(request);
@@ -134,7 +135,12 @@ class OpenRouterService {
         if (delta == null) continue;
 
         final content = delta['content'] as String?;
-        final reasoning = delta['reasoning_content'] as String?;
+
+        String? reasoning = delta['reasoning_content'] as String?;
+        if (reasoning == null || reasoning.isEmpty) {
+          reasoning = delta['reasoning'] as String?;
+        }
+
         if ((content != null && content.isNotEmpty) ||
             (reasoning != null && reasoning.isNotEmpty)) {
           controller.add(StreamChunk(

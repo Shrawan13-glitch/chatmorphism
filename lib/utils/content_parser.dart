@@ -16,9 +16,9 @@ class ContentParser {
   ContentParser._();
 
   static final RegExp _thinkingOpen =
-      RegExp(r'<thinking\b[^>]*>', caseSensitive: false);
+      RegExp(r'<think(?:ing)?\b[^>]*>', caseSensitive: false);
   static final RegExp _thinkingClose =
-      RegExp(r'</thinking\s*>', caseSensitive: false);
+      RegExp(r'</think(?:ing)?\s*>', caseSensitive: false);
 
   /// Sanitizes raw model output before parsing.
   /// Fixes common formatting mistakes like unclosed code fences.

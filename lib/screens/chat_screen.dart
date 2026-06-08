@@ -337,9 +337,10 @@ class _ChatScreenState extends State<ChatScreen> {
       ));
     }
 
-    // Legacy fallback: parse <thinking> tags from content
+    // Legacy fallback: parse <think>/<thinking> tags from content
     if (message.reasoning == null &&
-        message.content.contains('<thinking>')) {
+        RegExp(r'</?think(?:ing)?\b', caseSensitive: false)
+            .hasMatch(message.content)) {
       final sanitized = ContentParser.sanitize(message.content);
       final result = ContentParser.parse(sanitized);
       for (final seg in result.segments) {

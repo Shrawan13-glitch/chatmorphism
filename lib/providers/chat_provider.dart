@@ -220,6 +220,14 @@ class ChatProvider extends ChangeNotifier {
           lastNotify = now;
         }
       }
+
+      // Fallback: extract <think>/<thinking> tags from content for models
+      // like DeepSeek R1 that don't use native reasoning_content
+      if ((aiMessage.reasoning == null || aiMessage.reasoning!.isEmpty) &&
+          _hasThinkTags(aiMessage.content)) {
+        _extractThinkingFromContent(aiMessage);
+      }
+
       notifyListeners();
 
       await _db.updateMessageContent(aiMessage.id, aiMessage.content,
@@ -264,6 +272,26 @@ class ChatProvider extends ChangeNotifier {
       await _db.updateMessageContent(msg.id, cleanedContent,
           reasoning: reasoning);
     }
+  }
+
+  /// Extracts `<think>`/`<thinking>` tags from message content into [Message.reasoning].
+  void _extractThinkingFromContent(Message msg) {
+    final sanitized = ContentParser.sanitize(msg.content);
+    final result = ContentParser.parse(sanitized);
+    final reasoningParts =
+        result.segments.where((s) => s.isThinking).map((s) => s.content);
+    if (reasoningParts.isEmpty) return;
+
+    msg.reasoning = reasoningParts.join('\n\n');
+    msg.content = result.segments
+        .where((s) => !s.isThinking)
+        .map((s) => s.content)
+        .join('');
+  }
+
+  static bool _hasThinkTags(String content) {
+    return RegExp(r'</?think(?:ing)?\b', caseSensitive: false)
+        .hasMatch(content);
   }
 
   Future<void> _insertErrorMessage(String chatId, String content) async {
