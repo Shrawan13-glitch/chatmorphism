@@ -326,7 +326,7 @@ class _ChatScreenState extends State<ChatScreen> {
       BuildContext context, Message message, bool isStreaming) {
     final segments = <Widget>[];
 
-    // Native reasoning from provider
+    // Native reasoning from provider API
     if (message.reasoning != null && message.reasoning!.isNotEmpty) {
       segments.add(Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -337,37 +337,37 @@ class _ChatScreenState extends State<ChatScreen> {
       ));
     }
 
-    // Legacy fallback: parse <think>/<thinking> tags from content
-    if (message.reasoning == null &&
-        RegExp(r'</?think(?:ing)?\b', caseSensitive: false)
-            .hasMatch(message.content)) {
-      final sanitized = ContentParser.sanitize(message.content);
-      final result = ContentParser.parse(sanitized);
-      for (final seg in result.segments) {
-        if (seg.isThinking) {
-          segments.add(Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child:
-                ThinkingBlock(content: seg.content, isStreaming: false),
-          ));
-        } else if (seg.content.isNotEmpty) {
-          segments.add(AiResponse(content: seg.content, isStreaming: isStreaming));
-        }
-      }
-      if (result.streamingThought != null) {
+    // Always parse content for think tags — handles both streaming chunks
+    // and legacy messages in one unified path
+    final sanitized = ContentParser.sanitize(message.content);
+    final result = ContentParser.parse(sanitized);
+    bool hasTextSegments = false;
+    for (final seg in result.segments) {
+      if (seg.isThinking) {
         segments.add(Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: ThinkingBlock(
-            content: result.streamingThought!,
-            isStreaming: true,
-          ),
+          child: ThinkingBlock(content: seg.content, isStreaming: false),
         ));
+      } else if (seg.content.isNotEmpty) {
+        segments.add(AiResponse(content: seg.content, isStreaming: isStreaming));
+        hasTextSegments = true;
       }
-      return segments;
+    }
+    if (result.streamingThought != null) {
+      segments.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: ThinkingBlock(
+          content: result.streamingThought!,
+          isStreaming: true,
+        ),
+      ));
     }
 
-    // Display content directly
-    if (message.content.isNotEmpty) {
+    // If no thinking at all, show content directly
+    if (!hasTextSegments &&
+        result.streamingThought == null &&
+        message.content.isNotEmpty &&
+        (message.reasoning == null || message.reasoning!.isEmpty)) {
       segments.add(AiResponse(content: message.content, isStreaming: isStreaming));
     }
 

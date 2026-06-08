@@ -103,7 +103,7 @@ class OpenRouterService {
         'model': model,
         'messages': messages,
         'stream': true,
-        'reasoning': {'effort': 'medium'},
+        'reasoning': {'effort': 'medium', 'exclude': false},
       });
 
       final response = await client.send(request);
