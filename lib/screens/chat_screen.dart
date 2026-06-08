@@ -10,6 +10,7 @@ import '../widgets/ai_response.dart';
 import '../widgets/typing_indicator.dart';
 import '../widgets/model_selector.dart';
 import '../widgets/thinking_block.dart';
+import '../utils/content_parser.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback onMenuTap;
@@ -321,59 +322,30 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  static final RegExp _thoughtRe =
-      RegExp(r'<thinking>(.*?)</thinking>', dotAll: true);
-
   List<Widget> _buildContentSegments(
       BuildContext context, Message message, bool isStreaming) {
-    final content = message.content;
+    final content = ContentParser.sanitize(message.content);
     if (content.isEmpty) return [];
 
-    // Detect unclosed <thinking> tag (streaming thinking in progress)
-    final lastOpen = content.lastIndexOf('<thinking>');
-    final lastClose = content.lastIndexOf('</thinking>');
-    final hasOpenStreaming =
-        lastOpen >= 0 && (lastClose < 0 || lastClose < lastOpen);
-
-    String completed;
-    String? streamingThought;
-
-    if (hasOpenStreaming) {
-      completed = content.substring(0, lastOpen);
-      streamingThought = content.substring(lastOpen + '<thinking>'.length);
-    } else {
-      completed = content;
-    }
-
+    final result = ContentParser.parse(content);
     final segments = <Widget>[];
-    int lastEnd = 0;
 
-    for (final match in _thoughtRe.allMatches(completed)) {
-      if (match.start > lastEnd) {
-        final text = completed.substring(lastEnd, match.start);
-        if (text.isNotEmpty) {
-          segments.add(AiResponse(content: text));
-        }
-      }
-      segments.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: ThinkingBlock(content: match.group(1)!, isStreaming: false),
-      ));
-      lastEnd = match.end;
-    }
-
-    if (lastEnd < completed.length) {
-      final text = completed.substring(lastEnd);
-      if (text.isNotEmpty) {
-        segments.add(AiResponse(content: text));
+    for (final seg in result.segments) {
+      if (seg.isThinking) {
+        segments.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: ThinkingBlock(content: seg.content, isStreaming: false),
+        ));
+      } else {
+        segments.add(AiResponse(content: seg.content));
       }
     }
 
-    if (streamingThought != null) {
+    if (result.streamingThought != null) {
       segments.add(Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: ThinkingBlock(
-          content: streamingThought,
+          content: result.streamingThought!,
           isStreaming: true,
         ),
       ));
