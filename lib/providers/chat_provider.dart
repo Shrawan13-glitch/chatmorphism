@@ -5,6 +5,9 @@ import 'package:uuid/uuid.dart';
 import '../database/database_helper.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../services/llm_provider.dart';
+import '../services/openrouter_provider.dart';
+import '../services/generation_manager.dart';
 import '../services/openrouter_service.dart';
 import '../services/search/search_service.dart';
 import '../services/search/webfetch_service.dart';
@@ -15,6 +18,8 @@ class ChatProvider extends ChangeNotifier {
   final SettingsProvider _settingsProvider;
   final DatabaseHelper _db = DatabaseHelper.instance;
   final Uuid _uuid = const Uuid();
+  final OpenRouterProvider _provider = OpenRouterProvider();
+  final GenerationManager _genManager = GenerationManager();
   late final SearchService _searchService;
   late final WebFetchService _webFetchService;
 
@@ -29,10 +34,6 @@ class ChatProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isGenerating = false;
   bool _initialized = false;
-
-  /// In-memory tool messages appended during the current generation loop.
-  /// These include assistant tool_calls messages and tool result messages.
-  final List<Map<String, dynamic>> _toolMessages = [];
 
   List<Chat> get chats => _chats;
   Chat? get currentChat => _currentChat;
@@ -98,6 +99,8 @@ class ChatProvider extends ChangeNotifier {
   Future<void> selectChat(String id) async {
     if (_currentChat?.id == id) return;
 
+    cancelGeneration();
+
     _isLoading = true;
     notifyListeners();
 
@@ -110,6 +113,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> deleteChat(String id) async {
+    cancelGeneration();
     await _db.deleteChat(id);
     _chats.removeWhere((c) => c.id == id);
 
@@ -132,8 +136,17 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void cancelGeneration() {
+    _genManager.cancel();
+  }
+
   Future<void> sendMessage(String content) async {
     if (content.trim().isEmpty) return;
+
+    // Cancel any ongoing generation before sending a new message
+    if (_isGenerating) {
+      cancelGeneration();
+    }
 
     if (!_settingsProvider.hasApiKey) {
       _showError('No API key configured. Add one in Settings > Providers.');
@@ -182,29 +195,159 @@ class ChatProvider extends ChangeNotifier {
       _chats.insert(0, _currentChat!);
     }
 
-    _toolMessages.clear();
     notifyListeners();
-
     await _generateResponse(chatId, model);
   }
 
-  /// Builds the complete message list for the API, including persisted
-  /// messages and in-memory tool messages from the current generation loop.
+  Future<void> _generateResponse(String chatId, String model) async {
+    _isGenerating = true;
+    notifyListeners();
+
+    final aiMessage = Message(
+      id: _uuid.v4(),
+      chatId: chatId,
+      role: 'assistant',
+      content: '',
+      createdAt: DateTime.now(),
+    );
+
+    await _db.insertMessage(aiMessage);
+    _messages.add(aiMessage);
+    notifyListeners();
+
+    final toolDefinitions = _buildToolDefinitions();
+
+    try {
+      final stream = _genManager.generate(
+        provider: _provider,
+        apiKey: _settingsProvider.apiKey,
+        model: model,
+        baseMessages: _buildApiMessages(),
+        toolDefinitions: toolDefinitions,
+        executeTool: (name, args) => _executeTool(name, args),
+      );
+
+      stream.listen(
+        (event) {
+          _handleGenerationEvent(event, aiMessage);
+        },
+        onDone: () async {
+          // Fallback: extract <think>/<thinking> tags from content for models
+          // that don't use native reasoning_content
+          if ((aiMessage.reasoning == null || aiMessage.reasoning!.isEmpty) &&
+              _hasThinkTags(aiMessage.content)) {
+            _extractThinkingFromContent(aiMessage);
+          }
+
+          // Persist final message
+          final meta = <String, dynamic>{
+            ...?aiMessage.metadata,
+          };
+          if (aiMessage.toolCalls != null && aiMessage.toolCalls!.isNotEmpty) {
+            meta['tool_calls'] =
+                aiMessage.toolCalls!.map((tc) => tc.toJson()).toList();
+          }
+          await _db.updateMessageContent(
+            aiMessage.id,
+            aiMessage.content,
+            reasoning: aiMessage.reasoning,
+            metadata: meta.isNotEmpty ? jsonEncode(meta) : null,
+          );
+
+          _isGenerating = false;
+          notifyListeners();
+        },
+        onError: (e) async {
+          _messages.remove(aiMessage);
+          await _db.deleteMessage(aiMessage.id);
+          await _insertErrorMessage(chatId, 'Error: $e');
+          _isGenerating = false;
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      _messages.remove(aiMessage);
+      await _db.deleteMessage(aiMessage.id);
+      await _insertErrorMessage(chatId, 'Connection error: $e');
+      _isGenerating = false;
+      notifyListeners();
+    }
+  }
+
+  void _handleGenerationEvent(GenerationEvent event, Message aiMessage) {
+    switch (event) {
+      case GenTextChunk(:final text):
+        aiMessage.content += text;
+        notifyListeners();
+
+      case GenThoughtChunk(:final thought):
+        aiMessage.reasoning = (aiMessage.reasoning ?? '') + thought;
+        notifyListeners();
+
+      case GenToolCallStart(:final name, :final arguments):
+        aiMessage.toolCalls ??= [];
+        final detId = buildToolCallId(name, arguments);
+        final existing = aiMessage.toolCalls?.indexWhere((t) => t.id == detId);
+        if (existing == null || existing < 0) {
+          aiMessage.toolCalls!.add(ToolCall(
+            id: detId,
+            name: name,
+            arguments: arguments,
+          ));
+        } else {
+          aiMessage.toolCalls![existing].arguments = arguments;
+        }
+        notifyListeners();
+
+      case GenToolCallResult(:final id, :final success, :final result):
+        final idx = aiMessage.toolCalls?.indexWhere((t) => t.id == id);
+        if (idx != null && idx >= 0 && idx < (aiMessage.toolCalls?.length ?? 0)) {
+          final tc = aiMessage.toolCalls![idx];
+          tc.completed = success;
+          tc.error = !success;
+          tc.result = result;
+          notifyListeners();
+        }
+
+      case GenUsage():
+        break;
+
+      case GenError(:final message):
+        aiMessage.content += '\n\nError: $message';
+        notifyListeners();
+
+      case GenDone():
+        break;
+
+      case GenTurnEnd():
+        // Tool loop continues in generation manager
+        break;
+    }
+  }
+
   List<Map<String, dynamic>> _buildApiMessages() {
     final list = <Map<String, dynamic>>[
       {'role': 'system', 'content': _settingsProvider.systemPrompt},
     ];
 
     for (final m in _messages) {
-      list.add({'role': m.role, 'content': m.content});
+      final msg = <String, dynamic>{'role': m.role, 'content': m.content};
+      if (m.toolCalls != null && m.toolCalls!.isNotEmpty && m.role == 'assistant') {
+        msg['tool_calls'] = m.toolCalls!.map((tc) => {
+          'id': tc.id,
+          'type': 'function',
+          'function': {
+            'name': tc.name,
+            'arguments': jsonEncode(tc.arguments),
+          },
+        }).toList();
+      }
+      list.add(msg);
     }
-
-    list.addAll(_toolMessages);
 
     return list;
   }
 
-  /// Builds tool definitions in OpenAI-compatible format.
   List<Map<String, dynamic>> _buildToolDefinitions() {
     return [
       OpenRouterService.makeToolDefinition(
@@ -240,192 +383,6 @@ class ChatProvider extends ChangeNotifier {
     ];
   }
 
-  Future<void> _generateResponse(String chatId, String model) async {
-    _isGenerating = true;
-    notifyListeners();
-
-    final aiMessage = Message(
-      id: _uuid.v4(),
-      chatId: chatId,
-      role: 'assistant',
-      content: '',
-      createdAt: DateTime.now(),
-    );
-
-    await _db.insertMessage(aiMessage);
-    _messages.add(aiMessage);
-    notifyListeners();
-
-    int turn = 0;
-    const int maxTurns = 5;
-
-    try {
-      while (turn < maxTurns) {
-        turn++;
-
-        final result = OpenRouterService.sendMessageStream(
-          apiKey: _settingsProvider.apiKey,
-          model: model,
-          messages: _buildApiMessages(),
-          tools: _buildToolDefinitions(),
-        );
-
-        final buffer = StringBuffer();
-        final reasoningBuffer = StringBuffer();
-        final toolCallBuilders = <String, _ToolCallBuilder>{};
-
-        await for (final chunk in result.stream) {
-          if (chunk.content.isNotEmpty) {
-            buffer.write(chunk.content);
-            aiMessage.content += chunk.content;
-            notifyListeners();
-          }
-          if (chunk.reasoning != null && chunk.reasoning!.isNotEmpty) {
-            reasoningBuffer.write(chunk.reasoning);
-            aiMessage.reasoning = (aiMessage.reasoning ?? '') + chunk.reasoning!;
-            notifyListeners();
-          }
-
-          // Tool call start — add a "Running..." entry to the message immediately
-          if (chunk.toolCallStarted != null) {
-            final ts = chunk.toolCallStarted!;
-            toolCallBuilders[ts.id] = _ToolCallBuilder(id: ts.id, name: ts.name);
-            aiMessage.toolCalls ??= [];
-            aiMessage.toolCalls!.add(ToolCall(
-              id: ts.id,
-              name: ts.name,
-              arguments: {},
-            ));
-            notifyListeners();
-          }
-
-          // Tool call args — accumulate and try to show partial JSON
-          if (chunk.toolCallArgs != null) {
-            final ta = chunk.toolCallArgs!;
-            final builder = toolCallBuilders[ta.id];
-            if (builder != null) {
-              builder.argumentsBuffer.write(ta.arguments);
-              // Attempt partial parse for display
-              try {
-                builder.parsed =
-                    jsonDecode(builder.argumentsBuffer.toString())
-                        as Map<String, dynamic>;
-              } catch (_) {}
-              // Update the existing tool call entry on the message
-              final idx = aiMessage.toolCalls
-                  ?.indexWhere((t) => t.id == ta.id);
-              if (idx != null && idx >= 0 && idx < (aiMessage.toolCalls?.length ?? 0)) {
-                aiMessage.toolCalls![idx].arguments =
-                    builder.parsed ?? {};
-                notifyListeners();
-              }
-            }
-          }
-        }
-
-        // After stream: latest parsed args from the builder
-        final toolCalls = await result.toolCalls;
-        if (toolCalls.isEmpty) break;
-
-        // Update any tool calls that were streamed live with final parsed args
-        for (final tc in toolCalls) {
-          final idx =
-              aiMessage.toolCalls?.indexWhere((t) => t.id == tc.id);
-          if (idx != null && idx >= 0 && idx < (aiMessage.toolCalls?.length ?? 0)) {
-            aiMessage.toolCalls![idx].arguments = tc.arguments;
-          } else {
-            // Tool call wasn't streamed (shouldn't happen) — add now
-            aiMessage.toolCalls ??= [];
-            aiMessage.toolCalls!.add(ToolCall(
-              id: tc.id,
-              name: tc.name,
-              arguments: tc.arguments,
-            ));
-          }
-        }
-        notifyListeners();
-
-        // Record the assistant message with tool calls for the API context
-        final assistantMsg = <String, dynamic>{
-          'role': 'assistant',
-          'content': buffer.toString(),
-          'tool_calls': toolCalls.map((tc) {
-            return {
-              'id': tc.id,
-              'type': 'function',
-              'function': {
-                'name': tc.name,
-                'arguments': jsonEncode(tc.arguments),
-              },
-            };
-          }).toList(),
-        };
-        _toolMessages.add(assistantMsg);
-
-        // Execute each tool call
-        for (final tc in toolCalls) {
-          String resultContent;
-
-          try {
-            resultContent = await _executeTool(tc.name, tc.arguments);
-            _updateToolCallState(aiMessage, tc.id,
-                completed: true, result: resultContent);
-          } catch (e) {
-            resultContent = 'Error executing tool "${tc.name}": $e';
-            _updateToolCallState(aiMessage, tc.id,
-                error: true, result: resultContent);
-          }
-          notifyListeners();
-
-          final toolMsg = OpenRouterService.makeToolResultMessage(
-            toolCallId: tc.id,
-            content: resultContent,
-          );
-          _toolMessages.add(toolMsg);
-        }
-
-        notifyListeners();
-      }
-
-      // Fallback: extract <think>/<thinking> tags from content for models
-      // like DeepSeek R1 that don't use native reasoning_content
-      if ((aiMessage.reasoning == null || aiMessage.reasoning!.isEmpty) &&
-          _hasThinkTags(aiMessage.content)) {
-        _extractThinkingFromContent(aiMessage);
-      }
-
-      notifyListeners();
-
-      // Build metadata including tool calls for persistence
-      final meta = <String, dynamic>{
-        ...?aiMessage.metadata,
-      };
-      if (aiMessage.toolCalls != null && aiMessage.toolCalls!.isNotEmpty) {
-        meta['tool_calls'] =
-            aiMessage.toolCalls!.map((tc) => tc.toJson()).toList();
-      }
-      await _db.updateMessageContent(
-        aiMessage.id,
-        aiMessage.content,
-        reasoning: aiMessage.reasoning,
-        metadata: meta.isNotEmpty ? jsonEncode(meta) : null,
-      );
-    } on OpenRouterException catch (e) {
-      _messages.remove(aiMessage);
-      await _db.deleteMessage(aiMessage.id);
-      await _insertErrorMessage(chatId, 'Error: ${e.message}');
-    } catch (e) {
-      _messages.remove(aiMessage);
-      await _db.deleteMessage(aiMessage.id);
-      await _insertErrorMessage(chatId, 'Connection error: $e');
-    } finally {
-      _toolMessages.clear();
-      _isGenerating = false;
-      notifyListeners();
-    }
-  }
-
-  /// Executes a tool by name with the given arguments.
   Future<String> _executeTool(
       String name, Map<String, dynamic> arguments) async {
     switch (name) {
@@ -481,8 +438,6 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Migrates legacy messages that have `<thinking>` tags embedded in content
-  /// to use the separate [reasoning] field instead.
   Future<void> _migrateLegacyMessages() async {
     for (final msg in _messages) {
       if (!msg.isAssistant ||
@@ -509,7 +464,6 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Extracts `<think>`/`<thinking>` tags from message content into [Message.reasoning].
   void _extractThinkingFromContent(Message msg) {
     final sanitized = ContentParser.sanitize(msg.content);
     final result = ContentParser.parse(sanitized);
@@ -548,6 +502,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> clearAllChats() async {
+    cancelGeneration();
     await _db.clearAll();
     _chats.clear();
     _currentChat = null;
@@ -567,28 +522,4 @@ class ChatProvider extends ChangeNotifier {
     if (text.length <= 40) return text;
     return '${text.substring(0, 40)}...';
   }
-
-  void _updateToolCallState(
-    Message msg,
-    String toolCallId, {
-    bool? completed,
-    bool? error,
-    String? result,
-  }) {
-    final idx = msg.toolCalls?.indexWhere((t) => t.id == toolCallId);
-    if (idx == null || idx < 0 || idx >= (msg.toolCalls?.length ?? 0)) return;
-    final tc = msg.toolCalls![idx];
-    if (completed != null) tc.completed = completed;
-    if (error != null) tc.error = error;
-    if (result != null) tc.result = result;
-  }
-}
-
-class _ToolCallBuilder {
-  final String id;
-  final String name;
-  final StringBuffer argumentsBuffer = StringBuffer();
-  Map<String, dynamic>? parsed;
-
-  _ToolCallBuilder({required this.id, required this.name});
 }

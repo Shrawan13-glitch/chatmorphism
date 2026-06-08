@@ -40,6 +40,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
     setState(() => _hasText = false);
   }
 
+  void _stop() {
+    context.read<ChatProvider>().cancelGeneration();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isGenerating = context.watch<ChatProvider>().isGenerating;
@@ -95,40 +99,60 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           ),
                           isDense: true,
                         ),
-                        onSubmitted: (_) => _send(),
+                        onSubmitted: isGenerating ? null : (_) => _send(),
                       ),
                     ),
-                    if (_hasText)
+                    if (_hasText && !isGenerating)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4, right: 4),
                         child: IconButton(
-                          onPressed: isGenerating ? null : _send,
+                          onPressed: _send,
                           icon: Container(
                             width: 36,
                             height: 36,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
                                 colors: [
                                   AppColors.bubbleGradientStart,
                                   AppColors.bubbleGradientEnd,
                                 ],
                               ),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.all(Radius.circular(10)),
                             ),
-                            child: isGenerating
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.arrow_upward_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
+                            child: const Icon(
+                              Icons.arrow_upward_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                          splashRadius: 20,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                        ),
+                      ),
+                    if (isGenerating)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4, right: 4),
+                        child: IconButton(
+                          onPressed: _stop,
+                          icon: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: AppColors.error.withValues(alpha: 0.2),
+                              borderRadius: const BorderRadius.all(Radius.circular(10)),
+                              border: Border.all(
+                                color: AppColors.error.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.stop_rounded,
+                              color: AppColors.error,
+                              size: 20,
+                            ),
                           ),
                           splashRadius: 20,
                           padding: EdgeInsets.zero,
