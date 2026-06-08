@@ -182,6 +182,16 @@ class ChatProvider extends ChangeNotifier {
       }
 
       await _db.updateMessageContent(aiMessage.id, aiMessage.content);
+
+      final assistantCount =
+          _messages.where((m) => m.isAssistant).length;
+      if (assistantCount == 1) {
+        final firstUserMsg = _messages.firstWhere(
+          (m) => m.isUser,
+          orElse: () => _messages.first,
+        );
+        _generateTitle(chatId, firstUserMsg.content);
+      }
     } on OpenRouterException catch (e) {
       _messages.remove(aiMessage);
       await _db.deleteMessage(aiMessage.id);
@@ -206,6 +216,35 @@ class ChatProvider extends ChangeNotifier {
     );
     await _db.insertMessage(msg);
     _messages.add(msg);
+  }
+
+  Future<void> _generateTitle(String chatId, String firstMessage) async {
+    final titleModel = _settingsProvider.titleModel.isNotEmpty
+        ? _settingsProvider.titleModel
+        : _settingsProvider.defaultModel;
+    if (titleModel.isEmpty) return;
+
+    try {
+      final response = await OpenRouterService.sendMessage(
+        apiKey: _settingsProvider.apiKey,
+        model: titleModel,
+        messages: [
+          {
+            'role': 'system',
+            'content':
+                'Generate a concise title (maximum 6 words) for this conversation. Respond with only the title, no punctuation or quotes.',
+          },
+          {'role': 'user', 'content': firstMessage},
+        ],
+      );
+
+      final title = response.trim();
+      if (title.isNotEmpty && _currentChat?.id == chatId) {
+        _currentChat = _currentChat!.copyWith(title: title);
+        await _db.updateChat(_currentChat!);
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   Future<void> deleteMessage(String id) async {

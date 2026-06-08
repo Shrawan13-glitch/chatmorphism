@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart';
 import '../providers/chat_provider.dart';
+import '../providers/settings_provider.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/user_bubble.dart';
 import '../widgets/ai_response.dart';
@@ -70,8 +71,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Consumer<ChatProvider>(
-      builder: (context, provider, _) {
+    return Consumer2<ChatProvider, SettingsProvider>(
+      builder: (context, provider, settings, _) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
@@ -98,17 +99,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (provider.currentChat != null) ...[
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: ModelSelector(
-                    currentModelId: provider.currentChat?.model,
-                    onModelChanged: (modelId) {
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: ModelSelector(
+                  currentModelId: provider.currentChat?.model,
+                  onModelChanged: (modelId) {
+                    if (provider.currentChat != null) {
                       provider.setChatModel(modelId);
-                    },
-                  ),
+                    } else {
+                      settings.setDefaultModel(modelId);
+                    }
+                  },
                 ),
-              ],
+              ),
               if (provider.currentChat != null)
                 PopupMenuButton<String>(
                   icon: Icon(Icons.more_horiz_rounded,
