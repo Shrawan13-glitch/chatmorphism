@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart';
+import '../models/message.dart';
+import '../models/tool_call.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/chat_input_bar.dart';
@@ -8,6 +10,7 @@ import '../widgets/user_bubble.dart';
 import '../widgets/ai_response.dart';
 import '../widgets/typing_indicator.dart';
 import '../widgets/model_selector.dart';
+import '../widgets/tool_call_card.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback onMenuTap;
@@ -62,10 +65,48 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           children: [
             _buildHeader(context),
+            _buildContextBar(context),
             Expanded(child: _buildMessageList(context)),
             const ChatInputBar(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildContextBar(BuildContext context) {
+    final provider = context.watch<ChatProvider>();
+    final info = provider.contextInfo;
+    if (info == null || provider.messages.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.background(context),
+        border: Border(
+          bottom: BorderSide(color: AppColors.border(context), width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.list_alt_rounded,
+              size: 11, color: AppColors.textSecondary(context).withValues(alpha: 0.5)),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              info,
+              style: TextStyle(
+                fontSize: 10,
+                color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+                fontFamily: 'monospace',
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -191,6 +232,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   );
                 }
 
+                final toolCalls = _extractToolCalls(message);
+
                 return Padding(
                   key: ValueKey(message.id),
                   padding: EdgeInsets.only(
@@ -238,6 +281,11 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                         AiResponse(content: message.content),
+                        if (toolCalls.isNotEmpty)
+                          ...toolCalls.map((t) => Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: ToolCallCard(toolCall: t),
+                              )),
                         if (isStreaming)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
@@ -290,6 +338,14 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       },
     );
+  }
+
+  List<ToolCall> _extractToolCalls(Message message) {
+    final data = message.metadata;
+    if (data == null) return [];
+    final calls = data['tool_calls'] as List?;
+    if (calls == null) return [];
+    return calls.map((e) => ToolCall.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Widget _buildEmptyState(BuildContext context) {

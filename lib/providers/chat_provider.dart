@@ -3,7 +3,9 @@ import 'package:uuid/uuid.dart';
 import '../database/database_helper.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../models/tool_call.dart';
 import '../services/openrouter_service.dart';
+import '../services/tool_service.dart';
 import 'settings_provider.dart';
 
 class ChatProvider extends ChangeNotifier {
@@ -29,6 +31,43 @@ class ChatProvider extends ChangeNotifier {
 
   String get _effectiveModel =>
       _currentChat?.model ?? _settingsProvider.defaultModel;
+
+  int get approximateContextTokens {
+    var total = 0;
+    for (final m in _messages) {
+      total += m.content.length ~/ 4;
+    }
+    return total;
+  }
+
+  String? get contextInfo {
+    final modelId = _effectiveModel;
+    if (modelId.isEmpty) return null;
+    final model = _settingsProvider.getModelById(modelId);
+    if (model == null || model.contextLength <= 0) return null;
+    final used = approximateContextTokens;
+    return '${modelId.split('/').last} · ${_fmt(used)} / ${_fmt(model.contextLength)}';
+  }
+
+  static String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
+  }
+
+  String get systemPrompt {
+    return '''You are ChatMorphism, a helpful AI assistant with access to tools.
+
+When you need to use a tool, write your complete response first, then append tool calls at the end using this format:
+
+<tool name="websearch" args="your search query"/>
+
+Available tools:
+- websearch: Search the web using DuckDuckGo. args should be the search query.
+
+You can call multiple tools. Always put them at the end of your response.
+After tool results come back, continue your response naturally incorporating the results.''';
+  }
 
   Future<void> initialize() async {
     _isLoading = true;
@@ -148,6 +187,63 @@ class ChatProvider extends ChangeNotifier {
     await _generateResponse(chatId, model);
   }
 
+  List<Map<String, String>> _buildApiMessages(
+      Message aiMessage, List<ToolCall> toolResults) {
+    final list = <Map<String, String>>[
+      {'role': 'system', 'content': systemPrompt},
+    ];
+
+    for (final m in _messages) {
+      if (m.id == aiMessage.id) continue;
+      list.add({'role': m.role, 'content': m.content});
+    }
+
+    if (toolResults.isNotEmpty) {
+      final buf = StringBuffer('Tool results:\n\n');
+      final grouped = <String, List<ToolCall>>{};
+      for (final t in toolResults) {
+        grouped.putIfAbsent(t.name, () => []).add(t);
+      }
+      for (final entry in grouped.entries) {
+        buf.writeln('--- ${entry.key} ---');
+        for (final t in entry.value) {
+          buf.writeln('Args: ${t.args}');
+          if (t.result != null) buf.writeln(t.result);
+          if (t.error != null) buf.writeln('Error: ${t.error}');
+          buf.writeln();
+        }
+      }
+      buf.write('Continue your response incorporating these results.');
+      list.add({'role': 'system', 'content': buf.toString().trim()});
+    }
+
+    return list;
+  }
+
+  List<ToolCall> _parseToolCalls(String content) {
+    final regex =
+        RegExp(r'<tool\s+name="([^"]+)"\s+args="([^"]*)"\s*/>');
+    return regex.allMatches(content).map((m) => ToolCall(
+          name: m.group(1)!,
+          args: m.group(2)!,
+        )).toList();
+  }
+
+  String _stripToolTags(String content) {
+    return content.replaceAll(
+        RegExp(r'<tool\s+name="[^"]+"\s+args="[^"]*"\s*/>'), '');
+  }
+
+  Future<String> _executeTool(String name, String args) async {
+    switch (name) {
+      case 'websearch':
+        final result = await ToolService.webSearch(args);
+        return result.formatted;
+      default:
+        throw Exception('Unknown tool: $name');
+    }
+  }
+
   Future<void> _generateResponse(String chatId, String model) async {
     _isGenerating = true;
     notifyListeners();
@@ -164,20 +260,50 @@ class ChatProvider extends ChangeNotifier {
     _messages.add(aiMessage);
     notifyListeners();
 
+    final allToolCalls = <ToolCall>[];
+    int rounds = 0;
+    const maxRounds = 5;
+
     try {
-      final apiMessages = _messages
-          .where((m) => m.id != aiMessage.id)
-          .map((m) => {'role': m.role, 'content': m.content})
-          .toList();
+      while (rounds < maxRounds) {
+        final apiMessages = _buildApiMessages(aiMessage,
+            rounds > 0 ? allToolCalls : []);
 
-      final stream = OpenRouterService.sendMessageStream(
-        apiKey: _settingsProvider.apiKey,
-        model: model,
-        messages: apiMessages,
-      );
+        final stream = OpenRouterService.sendMessageStream(
+          apiKey: _settingsProvider.apiKey,
+          model: model,
+          messages: apiMessages,
+        );
 
-      await for (final chunk in stream) {
-        aiMessage.content += chunk;
+        await for (final chunk in stream) {
+          aiMessage.content += chunk;
+          notifyListeners();
+        }
+
+        final toolCalls = _parseToolCalls(aiMessage.content);
+        if (toolCalls.isEmpty) break;
+
+        rounds++;
+
+        aiMessage.content = _stripToolTags(aiMessage.content.trim());
+        await _db.updateMessageContent(aiMessage.id, aiMessage.content);
+
+        for (final tool in toolCalls) {
+          tool.isRunning = true;
+          notifyListeners();
+          try {
+            final result = await _executeTool(tool.name, tool.args);
+            tool.result = result;
+          } catch (e) {
+            tool.error = e.toString();
+          }
+          tool.isRunning = false;
+        }
+
+        allToolCalls.addAll(toolCalls);
+        aiMessage.metadata = {
+          'tool_calls': allToolCalls.map((t) => t.toJson()).toList(),
+        };
         notifyListeners();
       }
 

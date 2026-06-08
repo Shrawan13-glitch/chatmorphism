@@ -6,7 +6,7 @@ class Message {
   final String role;
   String content;
   final DateTime createdAt;
-  final Map<String, dynamic>? metadata;
+  Map<String, dynamic>? metadata;
 
   Message({
     required this.id,
