@@ -3,9 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../database/database_helper.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
-import '../models/tool_call.dart';
 import '../services/openrouter_service.dart';
-import '../services/tool_service.dart';
 import 'settings_provider.dart';
 
 class ChatProvider extends ChangeNotifier {
@@ -31,12 +29,6 @@ class ChatProvider extends ChangeNotifier {
 
   String get _effectiveModel =>
       _currentChat?.model ?? _settingsProvider.defaultModel;
-
-  static final RegExp _toolTagRe =
-      RegExp(r'<tool\s+name="([^"]+)"\s+args="([^"]*)"\s*/>');
-  static final RegExp _toolMarkerRe = RegExp(r'\x00tool:(\d+)\x00');
-
-  static String _toolMarker(int idx) => '\x00tool:$idx\x00';
 
   int get approximateContextTokens {
     var total = 0;
@@ -179,66 +171,16 @@ class ChatProvider extends ChangeNotifier {
     await _generateResponse(chatId, model);
   }
 
-  String _contentForApi(String content) =>
-      content.replaceAll(_toolMarkerRe, '');
-
-  List<Map<String, String>> _buildApiMessages(
-      Message aiMessage, List<ToolCall> toolResults) {
+  List<Map<String, String>> _buildApiMessages() {
     final list = <Map<String, String>>[
       {'role': 'system', 'content': _settingsProvider.systemPrompt},
     ];
 
     for (final m in _messages) {
-      if (m.id == aiMessage.id) continue;
-      list.add({'role': m.role, 'content': _contentForApi(m.content)});
-    }
-
-    if (toolResults.isNotEmpty) {
-      final buf = StringBuffer('Tool results:\n\n');
-      final grouped = <String, List<ToolCall>>{};
-      for (final t in toolResults) {
-        grouped.putIfAbsent(t.name, () => []).add(t);
-      }
-      for (final entry in grouped.entries) {
-        buf.writeln('--- ${entry.key} ---');
-        for (final t in entry.value) {
-          buf.writeln('Args: ${t.args}');
-          if (t.result != null) buf.writeln(t.result);
-          if (t.error != null) buf.writeln('Error: ${t.error}');
-          buf.writeln();
-        }
-      }
-      buf.write('Continue your response incorporating these results.');
-      list.add({'role': 'system', 'content': buf.toString().trim()});
+      list.add({'role': m.role, 'content': m.content});
     }
 
     return list;
-  }
-
-  List<ToolCall> _parseToolCalls(String content) {
-    return _toolTagRe.allMatches(content).map((m) => ToolCall(
-          name: m.group(1)!,
-          args: m.group(2)!,
-        )).toList();
-  }
-
-  String _replaceWithMarkers(String content, List<ToolCall> calls) {
-    int idx = 0;
-    return content.replaceAllMapped(_toolTagRe, (m) {
-      final replacement = _toolMarker(idx);
-      idx++;
-      return replacement;
-    });
-  }
-
-  Future<String> _executeTool(String name, String args) async {
-    switch (name) {
-      case 'websearch':
-        final result = await ToolService.webSearch(args);
-        return result.formatted;
-      default:
-        throw Exception('Unknown tool: $name');
-    }
   }
 
   Future<void> _generateResponse(String chatId, String model) async {
@@ -257,51 +199,15 @@ class ChatProvider extends ChangeNotifier {
     _messages.add(aiMessage);
     notifyListeners();
 
-    final allToolCalls = <ToolCall>[];
-    int rounds = 0;
-    const maxRounds = 5;
-
     try {
-      while (rounds < maxRounds) {
-        final apiMessages = _buildApiMessages(aiMessage,
-            rounds > 0 ? allToolCalls : []);
+      final stream = OpenRouterService.sendMessageStream(
+        apiKey: _settingsProvider.apiKey,
+        model: model,
+        messages: _buildApiMessages(),
+      );
 
-        final stream = OpenRouterService.sendMessageStream(
-          apiKey: _settingsProvider.apiKey,
-          model: model,
-          messages: apiMessages,
-        );
-
-        await for (final chunk in stream) {
-          aiMessage.content += chunk;
-          notifyListeners();
-        }
-
-        final toolCalls = _parseToolCalls(aiMessage.content);
-        if (toolCalls.isEmpty) break;
-
-        rounds++;
-
-        aiMessage.content =
-            _replaceWithMarkers(aiMessage.content.trim(), toolCalls);
-        await _db.updateMessageContent(aiMessage.id, aiMessage.content);
-
-        for (final tool in toolCalls) {
-          tool.isRunning = true;
-          notifyListeners();
-          try {
-            final result = await _executeTool(tool.name, tool.args);
-            tool.result = result;
-          } catch (e) {
-            tool.error = e.toString();
-          }
-          tool.isRunning = false;
-        }
-
-        allToolCalls.addAll(toolCalls);
-        aiMessage.metadata = {
-          'tool_calls': allToolCalls.map((t) => t.toJson()).toList(),
-        };
+      await for (final chunk in stream) {
+        aiMessage.content += chunk;
         notifyListeners();
       }
 

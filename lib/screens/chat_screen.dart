@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart';
 import '../models/message.dart';
-import '../models/tool_call.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/chat_input_bar.dart';
@@ -10,7 +9,6 @@ import '../widgets/user_bubble.dart';
 import '../widgets/ai_response.dart';
 import '../widgets/typing_indicator.dart';
 import '../widgets/model_selector.dart';
-import '../widgets/tool_call_card.dart';
 import '../widgets/thinking_block.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -279,20 +277,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               ],
                             ),
                           ),
-                        ..._buildContentSegments(context, message),
-                        if (isStreaming)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'generating...',
-                              style: TextStyle(
-                                color: AppColors.textSecondary(context)
-                                    .withValues(alpha: 0.5),
-                                fontSize: 11,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          ),
+                        ..._buildContentSegments(context, message, isStreaming),
                       ],
                     ],
                   ),
@@ -334,81 +319,65 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  static final RegExp _toolMarkerRe = RegExp(r'\x00tool:(\d+)\x00');
   static final RegExp _thoughtRe =
       RegExp(r'<thinking>(.*?)</thinking>', dotAll: true);
 
-  List<Widget> _buildContentSegments(BuildContext context, Message message) {
-    final toolCalls = _extractToolCalls(message);
+  List<Widget> _buildContentSegments(
+      BuildContext context, Message message, bool isStreaming) {
     final content = message.content;
-
     if (content.isEmpty) return [];
+
+    // Detect unclosed <thinking> tag (streaming thinking in progress)
+    final lastOpen = content.lastIndexOf('<thinking>');
+    final lastClose = content.lastIndexOf('</thinking>');
+    final hasOpenStreaming =
+        lastOpen >= 0 && (lastClose < 0 || lastClose < lastOpen);
+
+    String completed;
+    String? streamingThought;
+
+    if (hasOpenStreaming) {
+      completed = content.substring(0, lastOpen);
+      streamingThought = content.substring(lastOpen + '<thinking>'.length);
+    } else {
+      completed = content;
+    }
 
     final segments = <Widget>[];
     int lastEnd = 0;
 
-    for (final match in _thoughtRe.allMatches(content)) {
+    for (final match in _thoughtRe.allMatches(completed)) {
       if (match.start > lastEnd) {
-        segments.addAll(_buildTextSegments(
-            context, content.substring(lastEnd, match.start), toolCalls));
+        final text = completed.substring(lastEnd, match.start);
+        if (text.isNotEmpty) {
+          segments.add(AiResponse(content: text));
+        }
       }
       segments.add(Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: ThinkingBlock(content: match.group(1)!),
+        child: ThinkingBlock(content: match.group(1)!, isStreaming: false),
       ));
       lastEnd = match.end;
     }
 
-    if (lastEnd < content.length) {
-      segments.addAll(
-          _buildTextSegments(context, content.substring(lastEnd), toolCalls));
+    if (lastEnd < completed.length) {
+      final text = completed.substring(lastEnd);
+      if (text.isNotEmpty) {
+        segments.add(AiResponse(content: text));
+      }
+    }
+
+    if (streamingThought != null) {
+      segments.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: ThinkingBlock(
+          content: streamingThought,
+          isStreaming: true,
+        ),
+      ));
     }
 
     return segments;
-  }
-
-  List<Widget> _buildTextSegments(
-      BuildContext context, String text, List<ToolCall> toolCalls) {
-    if (text.isEmpty) return [];
-    if (toolCalls.isEmpty) return [AiResponse(content: text)];
-
-    final segments = <Widget>[];
-    int lastEnd = 0;
-
-    for (final match in _toolMarkerRe.allMatches(text)) {
-      final textBefore = text.substring(lastEnd, match.start);
-      if (textBefore.isNotEmpty) {
-        segments.add(Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: AiResponse(content: textBefore),
-        ));
-      }
-
-      final idx = int.parse(match.group(1)!);
-      if (idx < toolCalls.length) {
-        segments.add(Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: ToolCallCard(toolCall: toolCalls[idx]),
-        ));
-      }
-
-      lastEnd = match.end;
-    }
-
-    final textAfter = text.substring(lastEnd);
-    if (textAfter.isNotEmpty) {
-      segments.add(AiResponse(content: textAfter));
-    }
-
-    return segments;
-  }
-
-  List<ToolCall> _extractToolCalls(Message message) {
-    final data = message.metadata;
-    if (data == null) return [];
-    final calls = data['tool_calls'] as List?;
-    if (calls == null) return [];
-    return calls.map((e) => ToolCall.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Widget _buildEmptyState(BuildContext context) {
