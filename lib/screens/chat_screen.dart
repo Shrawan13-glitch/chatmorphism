@@ -288,18 +288,18 @@ class _ChatScreenState extends State<ChatScreen> {
       BuildContext context, Message message, bool isStreaming) {
     final segments = <Widget>[];
 
-    // Native reasoning from provider API
+    // 1. Native reasoning from provider API (reasoning_content SSE field)
     if (message.reasoning != null && message.reasoning!.isNotEmpty) {
       segments.add(Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: ThinkingBlock(
           content: message.reasoning!,
-          isStreaming: isStreaming && message.content.isEmpty,
+          isStreaming: isStreaming,
         ),
       ));
     }
 
-    // Tool calls
+    // 2. Tool calls
     if (message.toolCalls != null && message.toolCalls!.isNotEmpty) {
       for (final tc in message.toolCalls!) {
         segments.add(Padding(
@@ -312,11 +312,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
 
-    // Always parse content for think tags — handles both streaming chunks
-    // and legacy messages in one unified path
+    // 3. Content parser — extract <thinking> tags from content for models
+    //    that embed thinking inline (e.g. some OpenRouter models)
     final sanitized = ContentParser.sanitize(message.content);
     final result = ContentParser.parse(sanitized);
     bool hasTextSegments = false;
+
+    // Completed segments in order
     for (final seg in result.segments) {
       if (seg.isThinking) {
         segments.add(Padding(
@@ -328,6 +330,8 @@ class _ChatScreenState extends State<ChatScreen> {
         hasTextSegments = true;
       }
     }
+
+    // Unclosed <thinking> tag during streaming — collapse below native reasoning / tool calls
     if (result.streamingThought != null) {
       segments.add(Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -338,7 +342,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ));
     }
 
-    // If no thinking at all, show content directly
+    // 4. If no segments at all (pure text, no tags), show content directly
     if (!hasTextSegments &&
         result.streamingThought == null &&
         message.content.isNotEmpty &&

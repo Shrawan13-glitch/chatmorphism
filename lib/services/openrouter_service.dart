@@ -231,19 +231,19 @@ class OpenRouterService {
         final delta = choices[0]['delta'] as Map<String, dynamic>?;
         if (delta == null) continue;
 
-        // --- text content ---
-        final content = delta['content'] as String?;
-        if (content != null && content.isNotEmpty) {
-          controller.add(StreamChunk(content: content));
-        }
-
-        // --- reasoning ---
+        // --- reasoning (check before content to match opencode's order) ---
         String? reasoning = delta['reasoning_content'] as String?;
         if (reasoning == null || reasoning.isEmpty) {
           reasoning = delta['reasoning'] as String?;
         }
         if (reasoning != null && reasoning.isNotEmpty) {
           controller.add(StreamChunk(reasoning: reasoning));
+        }
+
+        // --- text content ---
+        final content = delta['content'] as String?;
+        if (content != null && content.isNotEmpty) {
+          controller.add(StreamChunk(content: content));
         }
 
         // --- tool calls (emitted live during streaming) ---
