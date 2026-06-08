@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
 import '../constants.dart';
+import '../utils/table_builder.dart';
 
 class ThinkingBlock extends StatefulWidget {
   final String content;
@@ -162,7 +163,7 @@ class _ThinkingBlockState extends State<ThinkingBlock>
                             fontStyle: FontStyle.italic,
                           ),
                         )
-                      : GptMarkdown(widget.content),
+                      : GptMarkdown(widget.content, tableBuilder: tableWidget),
                 ),
             ],
           ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
+import '../utils/table_builder.dart';
 
 class StreamingMarkdown extends StatefulWidget {
   final String content;
@@ -126,7 +127,7 @@ class _StreamingMarkdownState extends State<StreamingMarkdown>
     if (widget.isStreaming) {
       body = _buildStreaming();
     } else {
-      body = GptMarkdown(_displayContent);
+      body = GptMarkdown(_displayContent, tableBuilder: tableWidget);
     }
 
     return Align(
@@ -167,14 +168,14 @@ class _StreamingMarkdownState extends State<StreamingMarkdown>
                 opacity: _front == 0
                     ? (doFade ? 1.0 - alpha : 1.0)
                     : (doFade ? alpha : 0.0),
-                child: GptMarkdown(_buf0),
+                child: GptMarkdown(_buf0, tableBuilder: tableWidget),
               ),
             if (_buf1.isNotEmpty)
               Opacity(
                 opacity: _front == 1
                     ? (doFade ? 1.0 - alpha : 1.0)
                     : (doFade ? alpha : 0.0),
-                child: GptMarkdown(_buf1),
+                child: GptMarkdown(_buf1, tableBuilder: tableWidget),
               ),
           ],
         );
