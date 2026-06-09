@@ -17,44 +17,8 @@ class ToolCallBlock extends StatefulWidget {
   State<ToolCallBlock> createState() => _ToolCallBlockState();
 }
 
-class _ToolCallBlockState extends State<ToolCallBlock>
-    with SingleTickerProviderStateMixin {
+class _ToolCallBlockState extends State<ToolCallBlock> {
   bool _expanded = false;
-  late AnimationController _pulseController;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.isStreaming) {
-      _pulseController = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 1200),
-      )..repeat();
-    }
-  }
-
-  @override
-  void didUpdateWidget(ToolCallBlock oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isStreaming && !oldWidget.isStreaming) {
-      _pulseController = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 1200),
-      )..repeat();
-    } else if (!widget.isStreaming && oldWidget.isStreaming) {
-      _pulseController.dispose();
-    }
-  }
-
-  @override
-  void dispose() {
-    try {
-      if (_pulseController.isAnimating || _pulseController.isCompleted) {
-        _pulseController.dispose();
-      }
-    } catch (_) {}
-    super.dispose();
-  }
 
   IconData _getToolIcon(String name) {
     switch (name) {
@@ -85,96 +49,59 @@ class _ToolCallBlockState extends State<ToolCallBlock>
   }
 
   String _statusLabel() {
-    if (widget.toolCall.error) return 'Failed';
-    if (widget.toolCall.completed) return 'Done';
-    if (widget.isStreaming) return 'Running...';
-    return 'Pending';
-  }
-
-  Widget _buildStatusDot() {
-    if (widget.isStreaming) {
-      return AnimatedBuilder(
-        animation: _pulseController,
-        builder: (context, _) {
-          final pulse = (1 - (_pulseController.value * 2 - 1).abs())
-              .clamp(0.4, 1.0);
-          return Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primary.withValues(alpha: pulse),
-            ),
-          );
-        },
-      );
-    }
-    return Container(
-      width: 7,
-      height: 7,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _statusColor(),
-      ),
-    );
+    if (widget.toolCall.error) return 'failed';
+    if (widget.toolCall.completed) return 'done';
+    if (widget.isStreaming) return 'running...';
+    return 'pending';
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceLight(context).withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: widget.isStreaming
-              ? AppColors.primary.withValues(alpha: 0.2)
-              : AppColors.border(context).withValues(alpha: 0.5),
-        ),
+        color: AppColors.surfaceLight(context).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     _getToolIcon(widget.toolCall.name),
-                    size: 14,
-                    color: _statusColor(),
+                    size: 10,
+                    color: _statusColor().withValues(alpha: 0.6),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 4),
                   Text(
                     _toolLabel(widget.toolCall.name),
                     style: TextStyle(
-                      color: AppColors.textSecondary(context),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+                      fontSize: 10,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 4),
                   Text(
                     _statusLabel(),
                     style: TextStyle(
-                      color: _statusColor().withValues(alpha: 0.7),
-                      fontSize: 11,
+                      color: _statusColor().withValues(alpha: 0.4),
+                      fontSize: 9,
+                      fontStyle: FontStyle.italic,
                     ),
                   ),
-                  const Spacer(),
-                  if (!widget.toolCall.completed && !widget.toolCall.error)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: _buildStatusDot(),
-                    ),
+                  const SizedBox(width: 4),
                   Icon(
                     _expanded
-                        ? Icons.expand_less_rounded
-                        : Icons.expand_more_rounded,
-                    size: 16,
-                    color: AppColors.textSecondary(context),
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 12,
+                    color: AppColors.textSecondary(context).withValues(alpha: 0.3),
                   ),
                 ],
               ),
@@ -182,29 +109,24 @@ class _ToolCallBlockState extends State<ToolCallBlock>
           ),
           if (_expanded)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Arguments
                   _buildSection(
                     context,
-                    'Arguments',
+                    'args',
                     JsonEncoder.withIndent('  ')
                         .convert(widget.toolCall.arguments),
-                    Icons.settings_rounded,
                   ),
-                  const SizedBox(height: 6),
-                  // Result
-                  if (widget.toolCall.result != null)
+                  if (widget.toolCall.result != null) ...[
+                    const SizedBox(height: 4),
                     _buildSection(
                       context,
-                      widget.toolCall.error ? 'Error' : 'Result',
+                      widget.toolCall.error ? 'error' : 'result',
                       widget.toolCall.result!,
-                      widget.toolCall.error
-                          ? Icons.error_outline_rounded
-                          : Icons.check_circle_outline_rounded,
                     ),
+                  ],
                 ],
               ),
             ),
@@ -214,42 +136,38 @@ class _ToolCallBlockState extends State<ToolCallBlock>
   }
 
   Widget _buildSection(
-      BuildContext context, String label, String content, IconData icon) {
+      BuildContext context, String label, String content) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(icon, size: 11, color: AppColors.textSecondary(context)),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: AppColors.textSecondary(context),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-              ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: AppColors.textSecondary(context).withValues(alpha: 0.35),
+              fontSize: 8,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
             ),
-          ],
+          ),
         ),
-        const SizedBox(height: 4),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: AppColors.background(context).withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(6),
+            color: AppColors.background(context).withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
             content,
             style: TextStyle(
               color: widget.toolCall.error
-                  ? AppColors.error
-                  : AppColors.textSecondary(context),
-              fontSize: 11,
+                  ? AppColors.error.withValues(alpha: 0.7)
+                  : AppColors.textSecondary(context).withValues(alpha: 0.5),
+              fontSize: 10,
               fontFamily: 'monospace',
-              height: 1.4,
+              height: 1.3,
             ),
             maxLines: 20,
             overflow: TextOverflow.ellipsis,

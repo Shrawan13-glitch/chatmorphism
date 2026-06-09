@@ -14,37 +14,8 @@ class WorkThread extends StatefulWidget {
   State<WorkThread> createState() => _WorkThreadState();
 }
 
-class _WorkThreadState extends State<WorkThread>
-    with SingleTickerProviderStateMixin {
+class _WorkThreadState extends State<WorkThread> {
   bool _masterExpanded = false;
-  late AnimationController _glowController;
-
-  @override
-  void initState() {
-    super.initState();
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
-  }
-
-  @override
-  void didUpdateWidget(WorkThread old) {
-    super.didUpdateWidget(old);
-    final wasActive = old.entries.any((e) => e.isStreaming);
-    final isActive = widget.entries.any((e) => e.isStreaming);
-    if (isActive && !wasActive) {
-      _glowController.repeat();
-    } else if (!isActive && wasActive) {
-      _glowController.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _glowController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,121 +23,55 @@ class _WorkThreadState extends State<WorkThread>
         widget.entries.whereType<ThinkingEntry>().length;
     final toolCount = widget.entries.whereType<ToolCallEntry>().length;
     final isActive = widget.entries.any((e) => e.isStreaming);
+    final total = thinkingCount + toolCount;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Stack(
-        clipBehavior: Clip.none,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight(context),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: isActive
-                    ? AppColors.primary.withValues(alpha: 0.25)
-                    : AppColors.border(context),
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildHeader(thinkingCount, toolCount, isActive),
-                if (_masterExpanded) _buildTimeline(context),
-              ],
-            ),
-          ),
-          if (isActive) _buildGlowOverlay(context),
+          _buildHeader(isActive, total),
+          if (_masterExpanded) _buildTimeline(context),
         ],
       ),
     );
   }
 
-  Widget _buildGlowOverlay(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _glowController,
-      builder: (context, _) {
-        final pos = _glowController.value;
-        return Positioned.fill(
-          child: IgnorePointer(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Colors.transparent,
-                    Colors.transparent,
-                    AppColors.primary.withValues(alpha: 0.1),
-                    Colors.transparent,
-                    Colors.transparent,
-                  ],
-                  stops: [
-                    0.0,
-                    (pos - 0.15).clamp(0.0, 1.0),
-                    pos.clamp(0.0, 1.0),
-                    (pos + 0.15).clamp(0.0, 1.0),
-                    1.0,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildHeader(int thinkingCount, int toolCount, bool isActive) {
+  Widget _buildHeader(bool isActive, int total) {
     return InkWell(
       onTap: () => setState(() => _masterExpanded = !_masterExpanded),
+      borderRadius: BorderRadius.circular(4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: isActive ? 0.15 : 0.08),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.auto_awesome,
-                  size: 14,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                isActive ? 'Working...' : 'Thinking + Working',
-                style: TextStyle(
-                  color: AppColors.textPrimary(context),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
             Text(
-              '${thinkingCount + toolCount}',
+              isActive ? 'working...' : 'thoughts + tools',
               style: TextStyle(
-                color: AppColors.textSecondary(context),
-                fontSize: 12,
+                color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
               ),
             ),
+            if (total > 0) ...[
+              const SizedBox(width: 4),
+              Text(
+                '$total',
+                style: TextStyle(
+                  color: AppColors.textSecondary(context).withValues(alpha: 0.35),
+                  fontSize: 10,
+                ),
+              ),
+            ],
             const SizedBox(width: 4),
             Icon(
               _masterExpanded
                   ? Icons.keyboard_arrow_up_rounded
                   : Icons.keyboard_arrow_down_rounded,
-              size: 20,
-              color: AppColors.textSecondary(context),
+              size: 14,
+              color: AppColors.textSecondary(context).withValues(alpha: 0.35),
             ),
           ],
         ),
@@ -178,8 +83,8 @@ class _WorkThreadState extends State<WorkThread>
     final entries = widget.entries;
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Divider(height: 1, thickness: 1),
         for (int i = 0; i < entries.length; i++)
           _buildEntryRow(entries[i], i, entries.length, context),
       ],
@@ -187,42 +92,24 @@ class _WorkThreadState extends State<WorkThread>
   }
 
   Widget _buildEntryRow(ThreadEntry entry, int index, int count, BuildContext context) {
-    final isFirst = index == 0;
     final isLast = index == count - 1;
 
-    return IntrinsicHeight(
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 4,
+        top: index == 0 ? 0 : 1,
+        bottom: isLast ? 0 : 1,
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 36,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  child: Center(
-                    child: Container(
-                      width: 2,
-                      color: AppColors.border(context),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 12,
-                  left: 0,
-                  right: 0,
-                  child: Center(child: _buildNode(entry, context)),
-                ),
-              ],
-            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 5, right: 8),
+            child: _buildNode(entry, context),
           ),
           Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                top: isFirst ? 10 : 6,
-                bottom: isLast ? 10 : 4,
-                right: 12,
-              ),
+            child: _EntryFadeIn(
+              key: ValueKey('entry_$index'),
               child: _buildEntryContent(entry),
             ),
           ),
@@ -234,53 +121,29 @@ class _WorkThreadState extends State<WorkThread>
   Widget _buildNode(ThreadEntry entry, BuildContext context) {
     switch (entry) {
       case ThinkingEntry(:final isStreaming):
-        return Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
+        return Text(
+          '●',
+          style: TextStyle(
+            fontSize: 7,
             color: isStreaming
-                ? AppColors.primary
-                : AppColors.primary.withValues(alpha: 0.5),
+                ? AppColors.textSecondary(context).withValues(alpha: 0.5)
+                : AppColors.textSecondary(context).withValues(alpha: 0.25),
           ),
         );
 
-      case ToolCallEntry(:final toolName, :final isExecuting):
-        return Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
+      case ToolCallEntry(:final isExecuting):
+        return Text(
+          '▶',
+          style: TextStyle(
+            fontSize: 7,
             color: isExecuting
-                ? AppColors.primary.withValues(alpha: 0.15)
-                : AppColors.surface(context),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: AppColors.border(context),
-              width: 1,
-            ),
-          ),
-          child: Icon(
-            _toolIcon(toolName),
-            size: 12,
-            color: isExecuting
-                ? AppColors.primary
-                : AppColors.textSecondary(context),
+                ? AppColors.textSecondary(context).withValues(alpha: 0.5)
+                : AppColors.textSecondary(context).withValues(alpha: 0.25),
           ),
         );
 
       default:
         return const SizedBox.shrink();
-    }
-  }
-
-  IconData _toolIcon(String name) {
-    switch (name) {
-      case 'web_search':
-        return Icons.search_rounded;
-      case 'fetch_url':
-        return Icons.language_rounded;
-      default:
-        return Icons.code_rounded;
     }
   }
 
@@ -316,5 +179,55 @@ class _WorkThreadState extends State<WorkThread>
       default:
         return const SizedBox.shrink();
     }
+  }
+}
+
+class _EntryFadeIn extends StatefulWidget {
+  final Widget child;
+
+  const _EntryFadeIn({required this.child, super.key});
+
+  @override
+  State<_EntryFadeIn> createState() => _EntryFadeInState();
+}
+
+class _EntryFadeInState extends State<_EntryFadeIn>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacity;
+  late Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _opacity = Tween(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+    _slide = Tween<Offset>(
+      begin: const Offset(0, -0.04),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: widget.child,
+      ),
+    );
   }
 }
