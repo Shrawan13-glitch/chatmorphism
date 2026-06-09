@@ -30,7 +30,7 @@ class _StreamingMarkdownState extends State<StreamingMarkdown> {
   @override
   void initState() {
     super.initState();
-    _displayContent = widget.content;
+    _displayContent = _preprocess(widget.content);
   }
 
   @override
@@ -40,7 +40,20 @@ class _StreamingMarkdownState extends State<StreamingMarkdown> {
       _displayContent = '';
       return;
     }
-    _displayContent = widget.content;
+    _displayContent = _preprocess(widget.content);
+  }
+
+  static String _preprocess(String text) {
+    return text
+        .replaceAll('<br>', '\n')
+        .replaceAll('<br/>', '\n')
+        .replaceAll('<br />', '\n')
+        .replaceAll('<BR>', '\n')
+        .replaceAll('</br>', '')
+        .replaceAllMapped(
+          RegExp(r'^-{3,}\s*$', multiLine: true),
+          (_) => '⸻',
+        );
   }
 
   @override

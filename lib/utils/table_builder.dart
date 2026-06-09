@@ -2,6 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:gpt_markdown/custom_widgets/markdown_config.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
 
+String _cleanCell(String data) {
+  return data
+      .replaceAll('<br>', '\n')
+      .replaceAll('<br/>', '\n')
+      .replaceAll('<br />', '\n')
+      .replaceAll('<BR>', '\n')
+      .replaceAll('</br>', '');
+}
+
 Widget tableWidget(
   BuildContext context,
   List<CustomTableRow> rows,
@@ -24,31 +33,45 @@ Widget tableWidget(
       ),
       clipBehavior: Clip.antiAlias,
       child: Table(
-      border: TableBorder(
-        horizontalInside: BorderSide(color: border, width: 0.5),
-        verticalInside: BorderSide(color: border, width: 0.5),
+        border: TableBorder(
+          horizontalInside: BorderSide(color: border, width: 0.5),
+          verticalInside: BorderSide(color: border, width: 0.5),
+        ),
+        defaultVerticalAlignment: TableCellVerticalAlignment.top,
+        columnWidths: {
+          for (int i = 0; i < cols; i++)
+            i: MaxColumnWidth(
+              IntrinsicColumnWidth(),
+              FixedColumnWidth(100),
+            ),
+        },
+        children: rows.map((row) {
+          return TableRow(
+            decoration: BoxDecoration(color: row.isHeader ? headerBg : null),
+            children: row.fields.map((field) {
+              final content = _cleanCell(field.data);
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: row.isHeader
+                    ? Text(
+                        content,
+                        style: textStyle.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                        textAlign: field.alignment,
+                      )
+                    : MdWidget(
+                        context,
+                        content,
+                        false,
+                        config: config,
+                      ),
+              );
+            }).toList(),
+          );
+        }).toList(),
       ),
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      columnWidths: {for (int i = 0; i < cols; i++) i: const FixedColumnWidth(280)},
-      children: rows.map((row) {
-        return TableRow(
-          decoration: BoxDecoration(color: row.isHeader ? headerBg : null),
-          children: row.fields.map((field) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Text(
-                field.data,
-                style: textStyle.copyWith(
-                  fontWeight: row.isHeader ? FontWeight.w600 : null,
-                  color: textColor,
-                ),
-                textAlign: field.alignment,
-              ),
-            );
-          }).toList(),
-        );
-      }).toList(),
     ),
-      ),
   );
 }
