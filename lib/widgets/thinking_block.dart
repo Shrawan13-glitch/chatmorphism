@@ -76,8 +76,8 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
                       widget.content +
                           (widget.content.isNotEmpty ? ' ...' : ''),
                       style: TextStyle(
-                        color: AppColors.textSecondary(context).withValues(alpha: 0.5),
-                        fontSize: 11,
+                        color: AppColors.textSecondary(context).withValues(alpha: 0.7),
+                        fontSize: 12,
                         height: 1.5,
                         fontStyle: FontStyle.italic,
                       ),

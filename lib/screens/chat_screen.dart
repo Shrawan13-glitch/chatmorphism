@@ -332,8 +332,8 @@ class _ChatScreenState extends State<ChatScreen> {
           workBuffer.add(entry);
 
         case TextEntry(:final content, :final isStreaming):
-          flushWork();
-          if (content.isNotEmpty) {
+          if (content.trim().isNotEmpty) {
+            flushWork();
             segments.add(Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: AiResponse(content: content, isStreaming: isStreaming),

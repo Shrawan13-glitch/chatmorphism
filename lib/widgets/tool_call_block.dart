@@ -82,8 +82,8 @@ class _ToolCallBlockState extends State<ToolCallBlock> {
                   Text(
                     _toolLabel(widget.toolCall.name),
                     style: TextStyle(
-                      color: AppColors.textSecondary(context).withValues(alpha: 0.5),
-                      fontSize: 10,
+                      color: AppColors.textSecondary(context).withValues(alpha: 0.7),
+                      fontSize: 11,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -145,8 +145,8 @@ class _ToolCallBlockState extends State<ToolCallBlock> {
           child: Text(
             label,
             style: TextStyle(
-              color: AppColors.textSecondary(context).withValues(alpha: 0.35),
-              fontSize: 8,
+              color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+              fontSize: 9,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,
             ),
@@ -162,10 +162,10 @@ class _ToolCallBlockState extends State<ToolCallBlock> {
           child: Text(
             content,
             style: TextStyle(
-              color: widget.toolCall.error
-                  ? AppColors.error.withValues(alpha: 0.7)
-                  : AppColors.textSecondary(context).withValues(alpha: 0.5),
-              fontSize: 10,
+                color: widget.toolCall.error
+                    ? AppColors.error
+                    : AppColors.textSecondary(context).withValues(alpha: 0.7),
+                fontSize: 11,
               fontFamily: 'monospace',
               height: 1.3,
             ),
