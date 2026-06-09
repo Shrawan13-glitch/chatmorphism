@@ -40,9 +40,9 @@ Widget tableWidget(
         defaultVerticalAlignment: TableCellVerticalAlignment.top,
         columnWidths: {
           for (int i = 0; i < cols; i++)
-            i: MaxColumnWidth(
+            i: MinColumnWidth(
               IntrinsicColumnWidth(),
-              FixedColumnWidth(100),
+              FixedColumnWidth(250),
             ),
         },
         children: rows.map((row) {
