@@ -70,16 +70,15 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
           ),
           if (_expanded)
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              padding: const EdgeInsets.fromLTRB(6, 2, 6, 6),
               child: widget.isStreaming
                   ? Text(
                       widget.content +
                           (widget.content.isNotEmpty ? ' ...' : ''),
                       style: TextStyle(
-                        color: AppColors.textSecondary(context),
-                        fontSize: 12,
+                        color: AppColors.textSecondary(context).withValues(alpha: 0.85),
+                        fontSize: 13,
                         height: 1.5,
-                        fontStyle: FontStyle.italic,
                       ),
                     )
                   : GptMarkdown(
