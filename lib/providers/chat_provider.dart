@@ -217,18 +217,19 @@ class ChatProvider extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
 
+    final toolDefinitions = _buildToolDefinitions();
+    final baseMessages = _buildApiMessages();
+
     await _db.insertMessage(aiMessage);
     _messages.add(aiMessage);
     notifyListeners();
-
-    final toolDefinitions = _buildToolDefinitions();
 
     try {
       final stream = _genManager.generate(
         provider: _provider,
         apiKey: _settingsProvider.apiKey,
         model: model,
-        baseMessages: _buildApiMessages(),
+        baseMessages: baseMessages,
         toolDefinitions: toolDefinitions,
         executeTool: (name, args) => _executeTool(name, args),
       );
