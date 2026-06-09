@@ -50,23 +50,24 @@ Widget tableWidget(
             decoration: BoxDecoration(color: row.isHeader ? headerBg : null),
             children: row.fields.map((field) {
               final content = _cleanCell(field.data);
+              final spans = MarkdownComponent.generate(
+                context,
+                content,
+                config,
+                false,
+              );
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                child: row.isHeader
-                    ? Text(
-                        content,
-                        style: textStyle.copyWith(
+                child: Text.rich(
+                  TextSpan(children: spans),
+                  style: row.isHeader
+                      ? textStyle.copyWith(
                           fontWeight: FontWeight.w600,
                           color: textColor,
-                        ),
-                        textAlign: field.alignment,
-                      )
-                    : MdWidget(
-                        context,
-                        content,
-                        false,
-                        config: config,
-                      ),
+                        )
+                      : textStyle.copyWith(color: textColor),
+                  textAlign: field.alignment,
+                ),
               );
             }).toList(),
           );

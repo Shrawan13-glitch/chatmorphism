@@ -14,8 +14,37 @@ class WorkThread extends StatefulWidget {
   State<WorkThread> createState() => _WorkThreadState();
 }
 
-class _WorkThreadState extends State<WorkThread> {
-  bool _masterExpanded = true;
+class _WorkThreadState extends State<WorkThread>
+    with SingleTickerProviderStateMixin {
+  bool _masterExpanded = false;
+  late AnimationController _glowController;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+  }
+
+  @override
+  void didUpdateWidget(WorkThread old) {
+    super.didUpdateWidget(old);
+    final wasActive = old.entries.any((e) => e.isStreaming);
+    final isActive = widget.entries.any((e) => e.isStreaming);
+    if (isActive && !wasActive) {
+      _glowController.repeat();
+    } else if (!isActive && wasActive) {
+      _glowController.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _glowController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,20 +55,68 @@ class _WorkThreadState extends State<WorkThread> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceLight(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border(context)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          _buildHeader(thinkingCount, toolCount, isActive),
-          if (_masterExpanded) _buildTimeline(context),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight(context),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isActive
+                    ? AppColors.primary.withValues(alpha: 0.25)
+                    : AppColors.border(context),
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(thinkingCount, toolCount, isActive),
+                if (_masterExpanded) _buildTimeline(context),
+              ],
+            ),
+          ),
+          if (isActive) _buildGlowOverlay(context),
         ],
       ),
+    );
+  }
+
+  Widget _buildGlowOverlay(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _glowController,
+      builder: (context, _) {
+        final pos = _glowController.value;
+        return Positioned.fill(
+          child: IgnorePointer(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Colors.transparent,
+                    Colors.transparent,
+                    AppColors.primary.withValues(alpha: 0.1),
+                    Colors.transparent,
+                    Colors.transparent,
+                  ],
+                  stops: [
+                    0.0,
+                    (pos - 0.15).clamp(0.0, 1.0),
+                    pos.clamp(0.0, 1.0),
+                    (pos + 0.15).clamp(0.0, 1.0),
+                    1.0,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
