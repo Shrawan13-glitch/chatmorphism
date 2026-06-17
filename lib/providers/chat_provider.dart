@@ -153,7 +153,7 @@ class ChatProvider extends ChangeNotifier {
     }
 
     if (!_settingsProvider.hasApiKey) {
-      _showError('No API key configured. Add one in Settings > Providers.');
+      await _showError('No API key configured. Add one in Settings > Providers.');
       return;
     }
 
@@ -167,40 +167,44 @@ class ChatProvider extends ChangeNotifier {
     final model = _effectiveModel;
 
     if (model.isEmpty) {
-      _showError('No model selected. Select one in Settings > Providers.');
+      await _showError('No model selected. Select one in Settings > Providers.');
       return;
     }
 
-    if (isDraft) {
-      _currentChat = _currentChat!.copyWith(
-        title: _truncateTitle(content),
-        updatedAt: now,
-        model: model,
+    try {
+      if (isDraft) {
+        _currentChat = _currentChat!.copyWith(
+          title: _truncateTitle(content),
+          updatedAt: now,
+          model: model,
+        );
+        await _db.insertChat(_currentChat!);
+        _chats.insert(0, _currentChat!);
+      }
+
+      final userMessage = Message(
+        id: _uuid.v4(),
+        chatId: chatId,
+        role: 'user',
+        content: content.trim(),
+        createdAt: now,
       );
-      await _db.insertChat(_currentChat!);
-      _chats.insert(0, _currentChat!);
+
+      await _db.insertMessage(userMessage);
+      _messages.add(userMessage);
+
+      if (!isDraft) {
+        _currentChat = _currentChat!.copyWith(updatedAt: now);
+        await _db.updateChat(_currentChat!);
+        _chats.removeWhere((c) => c.id == chatId);
+        _chats.insert(0, _currentChat!);
+      }
+
+      notifyListeners();
+      await _generateResponse(chatId, model);
+    } catch (e) {
+      await _showError('Failed to send message: $e');
     }
-
-    final userMessage = Message(
-      id: _uuid.v4(),
-      chatId: chatId,
-      role: 'user',
-      content: content.trim(),
-      createdAt: now,
-    );
-
-    await _db.insertMessage(userMessage);
-    _messages.add(userMessage);
-
-    if (!isDraft) {
-      _currentChat = _currentChat!.copyWith(updatedAt: now);
-      await _db.updateChat(_currentChat!);
-      _chats.removeWhere((c) => c.id == chatId);
-      _chats.insert(0, _currentChat!);
-    }
-
-    notifyListeners();
-    await _generateResponse(chatId, model);
   }
 
   Future<void> _generateResponse(String chatId, String model) async {
@@ -627,11 +631,11 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _showError(String message) {
+  Future<void> _showError(String message) async {
     if (_currentChat == null) {
-      createChat();
+      await createChat();
     }
-    _insertErrorMessage(_currentChat!.id, message);
+    await _insertErrorMessage(_currentChat!.id, message);
     notifyListeners();
   }
 
