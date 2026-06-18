@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show File, Directory, FileSystemEntity, FileSystemEntityType, Process, Platform;
 import 'package:path/path.dart' as p;
 import 'vfs/vfs_service.dart';
 
@@ -51,6 +51,20 @@ class ToolExecutionService {
     return '$_vfsRoot/home/$clean';
   }
 
+  /// Returns the path to the Android dynamic linker for executing binaries
+  /// on noexec filesystems. Prefers 64-bit linker, falls back to 32-bit.
+  static String _androidLinker() {
+    const linker64 = '/system/bin/linker64';
+    if (File(linker64).existsSync()) return linker64;
+    return '/system/bin/linker';
+  }
+
+  /// Shell operators that signal the command needs a shell, not direct exec.
+  static const _shellOperators = <String>{'|', '>', '<', ';', '&&', '||', '&', '|&'};
+
+  static bool _needsShell(List<String> args) =>
+      args.any((a) => _shellOperators.contains(a));
+
   Future<ToolResult> runTool(
     String tool,
     List<String> args, {
@@ -61,8 +75,10 @@ class ToolExecutionService {
   }) async {
     final toolPath = _resolvePath(tool);
     final toolFile = File(toolPath);
+    final isAndroid = Platform.isAndroid;
+    final needsShell = _needsShell(args);
 
-    if (!await toolFile.exists()) {
+    if (!await toolFile.exists() && !needsShell) {
       return ToolResult(
         exitCode: -1,
         stdout: '',
@@ -77,15 +93,37 @@ class ToolExecutionService {
 
     final env = <String, String>{
       'HOME': '$_vfsRoot/home',
-      'PATH': '$_vfsRoot/tools',
+      'PATH': isAndroid
+          ? '$_vfsRoot/tools:/system/bin:/system/xbin'
+          : '$_vfsRoot/tools:/usr/bin:/usr/local/bin:/bin',
       'VFS_ROOT': _vfsRoot,
       ...?extraEnv,
     };
 
     try {
+      String executable;
+      List<String> execArgs;
+
+      if (needsShell) {
+        // Shell syntax detected (pipes, redirects, etc.) — run through sh.
+        // Use raw tool name (not VFS path) so system commands like cat, grep
+        // are found via PATH. VFS tools are also on PATH.
+        executable = isAndroid ? '/system/bin/sh' : '/bin/sh';
+        final command = [tool, ...args].join(' ');
+        execArgs = ['-c', command];
+      } else if (isAndroid) {
+        // Android 10+ mounts /data/data/ noexec, so execute binaries
+        // through the dynamic linker (same approach as Termux).
+        executable = _androidLinker();
+        execArgs = [toolPath, ...args];
+      } else {
+        executable = toolPath;
+        execArgs = args;
+      }
+
       final process = await Process.start(
-        toolPath,
-        args,
+        executable,
+        execArgs,
         workingDirectory: workDir,
         environment: env,
       );
