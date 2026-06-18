@@ -137,6 +137,23 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> renameChat(String id, String newTitle) async {
+    final index = _chats.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+
+    _chats[index] = _chats[index].copyWith(
+      title: newTitle,
+      updatedAt: DateTime.now(),
+    );
+
+    if (_currentChat?.id == id) {
+      _currentChat = _chats[index];
+    }
+
+    await _db.updateChat(_chats[index]);
+    notifyListeners();
+  }
+
   Future<void> setChatModel(String modelId) async {
     if (_currentChat == null) return;
 

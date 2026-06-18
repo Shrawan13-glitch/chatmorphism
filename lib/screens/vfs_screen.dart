@@ -38,19 +38,27 @@ class _VfsScreenState extends State<VfsScreen> {
   Widget build(BuildContext context) {
     return Consumer<VfsProvider>(
       builder: (context, vfs, _) {
-        return Scaffold(
-          backgroundColor: AppColors.background(context),
-          appBar: _buildAppBar(context, vfs),
-          body: Column(
-            children: [
-              _buildBreadcrumb(context, vfs),
-              _buildStatusBar(vfs),
-              Expanded(
-                child: _buildBody(context, vfs),
-              ),
-            ],
+        return PopScope(
+          canPop: vfs.currentPath == '/',
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) {
+              vfs.navigateUp();
+            }
+          },
+          child: Scaffold(
+            backgroundColor: AppColors.background(context),
+            appBar: _buildAppBar(context, vfs),
+            body: Column(
+              children: [
+                _buildBreadcrumb(context, vfs),
+                _buildStatusBar(vfs),
+                Expanded(
+                  child: _buildBody(context, vfs),
+                ),
+              ],
+            ),
+            floatingActionButton: _buildFab(context, vfs),
           ),
-          floatingActionButton: _buildFab(context, vfs),
         );
       },
     );
@@ -62,7 +70,13 @@ class _VfsScreenState extends State<VfsScreen> {
       surfaceTintColor: Colors.transparent,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: () => Navigator.of(context).maybePop(),
+        onPressed: () {
+          if (vfs.currentPath == '/') {
+            Navigator.of(context).maybePop();
+          } else {
+            vfs.navigateUp();
+          }
+        },
       ),
       title: Text(
         vfs.currentDirName,
