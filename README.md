@@ -2,7 +2,7 @@
   <br/>
   <img src="https://img.shields.io/badge/Flutter-3.12+-02569B?logo=flutter&logoColor=white" alt="Flutter"/>
   <img src="https://img.shields.io/badge/Dart-3.12+-0175C2?logo=dart&logoColor=white" alt="Dart"/>
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License"/>
+  <img src="https://img.shields.io/badge/license-GPLv3-blue?logo=gnu" alt="License"/>
   <img src="https://img.shields.io/badge/platform-Android-lightgrey?logo=android" alt="Platform"/>
 
   <br/>
@@ -259,7 +259,7 @@ Contributions are welcome! This is an open-source project with a focus on privac
 
 ## 📄 License
 
-Distributed under the **MIT License**. See `LICENSE` for more information.
+Distributed under the **GNU General Public License v3.0**. See `LICENSE` for more information.
 
 ---
 
