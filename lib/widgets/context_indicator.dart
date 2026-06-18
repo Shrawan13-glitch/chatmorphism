@@ -18,7 +18,7 @@ class _ContextIndicatorState extends State<ContextIndicator> {
 
   double get _contextPercentage {
     // Parse context info to get percentage
-    // Format: "model-name · 12.5K / 128K"
+    // Format: "model-name · 12.5K / 128K" or "model-name · 10 / 200K"
     if (widget.contextInfo == null) return 0;
     
     try {
@@ -26,23 +26,34 @@ class _ContextIndicatorState extends State<ContextIndicator> {
       final parts = widget.contextInfo!.split('·');
       if (parts.length < 2) return 0;
       
-      // Get the usage part (e.g., "12.5K / 128K")
+      // Get the usage part (e.g., "12.5K / 128K" or "10 / 200K")
       final usage = parts[1].trim();
       final usageParts = usage.split('/');
       if (usageParts.length != 2) return 0;
       
-      final usedStr = usageParts[0].trim().toUpperCase().replaceAll('K', '').replaceAll('M', '').replaceAll(',', '');
-      final totalStr = usageParts[1].trim().toUpperCase().replaceAll('K', '').replaceAll('M', '').replaceAll(',', '');
+      final usedPart = usageParts[0].trim().toUpperCase();
+      final totalPart = usageParts[1].trim().toUpperCase();
       
-      var used = double.tryParse(usedStr) ?? 0;
-      var total = double.tryParse(totalStr) ?? 1;
-      
-      // Handle K (thousands) and M (millions)
-      if (usageParts[0].toUpperCase().contains('M')) {
-        used *= 1000;
+      // Parse used value
+      var used = 0.0;
+      if (usedPart.contains('M')) {
+        used = (double.tryParse(usedPart.replaceAll('M', '').replaceAll(',', '')) ?? 0) * 1000;
+      } else if (usedPart.contains('K')) {
+        used = double.tryParse(usedPart.replaceAll('K', '').replaceAll(',', '')) ?? 0;
+      } else {
+        // Plain number without K or M - treat as actual value
+        used = (double.tryParse(usedPart.replaceAll(',', '')) ?? 0) / 1000;
       }
-      if (usageParts[1].toUpperCase().contains('M')) {
-        total *= 1000;
+      
+      // Parse total value
+      var total = 1.0;
+      if (totalPart.contains('M')) {
+        total = (double.tryParse(totalPart.replaceAll('M', '').replaceAll(',', '')) ?? 1) * 1000;
+      } else if (totalPart.contains('K')) {
+        total = double.tryParse(totalPart.replaceAll('K', '').replaceAll(',', '')) ?? 1;
+      } else {
+        // Plain number without K or M - treat as actual value
+        total = (double.tryParse(totalPart.replaceAll(',', '')) ?? 1) / 1000;
       }
       
       return (used / total).clamp(0.0, 1.0);
@@ -59,6 +70,9 @@ class _ContextIndicatorState extends State<ContextIndicator> {
   }
 
   void _showContextModal() {
+    // Close keyboard before opening modal
+    FocusScope.of(context).unfocus();
+    
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -126,7 +140,7 @@ class _ContextModal extends StatelessWidget {
 
   double _parseContextPercentage(String? contextInfo) {
     // Parse context info to get percentage
-    // Format: "model-name · 12.5K / 128K"
+    // Format: "model-name · 12.5K / 128K" or "model-name · 10 / 200K"
     if (contextInfo == null) return 0;
     
     try {
@@ -134,23 +148,34 @@ class _ContextModal extends StatelessWidget {
       final parts = contextInfo.split('·');
       if (parts.length < 2) return 0;
       
-      // Get the usage part (e.g., "12.5K / 128K")
+      // Get the usage part (e.g., "12.5K / 128K" or "10 / 200K")
       final usage = parts[1].trim();
       final usageParts = usage.split('/');
       if (usageParts.length != 2) return 0;
       
-      final usedStr = usageParts[0].trim().toUpperCase().replaceAll('K', '').replaceAll('M', '').replaceAll(',', '');
-      final totalStr = usageParts[1].trim().toUpperCase().replaceAll('K', '').replaceAll('M', '').replaceAll(',', '');
+      final usedPart = usageParts[0].trim().toUpperCase();
+      final totalPart = usageParts[1].trim().toUpperCase();
       
-      var used = double.tryParse(usedStr) ?? 0;
-      var total = double.tryParse(totalStr) ?? 1;
-      
-      // Handle K (thousands) and M (millions)
-      if (usageParts[0].toUpperCase().contains('M')) {
-        used *= 1000;
+      // Parse used value
+      var used = 0.0;
+      if (usedPart.contains('M')) {
+        used = (double.tryParse(usedPart.replaceAll('M', '').replaceAll(',', '')) ?? 0) * 1000;
+      } else if (usedPart.contains('K')) {
+        used = double.tryParse(usedPart.replaceAll('K', '').replaceAll(',', '')) ?? 0;
+      } else {
+        // Plain number without K or M - treat as actual value
+        used = (double.tryParse(usedPart.replaceAll(',', '')) ?? 0) / 1000;
       }
-      if (usageParts[1].toUpperCase().contains('M')) {
-        total *= 1000;
+      
+      // Parse total value
+      var total = 1.0;
+      if (totalPart.contains('M')) {
+        total = (double.tryParse(totalPart.replaceAll('M', '').replaceAll(',', '')) ?? 1) * 1000;
+      } else if (totalPart.contains('K')) {
+        total = double.tryParse(totalPart.replaceAll('K', '').replaceAll(',', '')) ?? 1;
+      } else {
+        // Plain number without K or M - treat as actual value
+        total = (double.tryParse(totalPart.replaceAll(',', '')) ?? 1) / 1000;
       }
       
       return (used / total).clamp(0.0, 1.0);

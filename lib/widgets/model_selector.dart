@@ -90,11 +90,16 @@ class ModelSelector extends StatelessWidget {
   }
 
   void _showModelPicker(BuildContext context, SettingsProvider settings) {
+    // Close keyboard before opening bottom sheet
+    FocusScope.of(context).unfocus();
+    
     final favorites = settings.favoriteModels;
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      enableDrag: true,
       builder: (ctx) => Container(
         decoration: BoxDecoration(
           color: AppColors.surface(context),
