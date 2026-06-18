@@ -12,7 +12,6 @@ class ContextIndicator extends StatefulWidget {
 }
 
 class _ContextIndicatorState extends State<ContextIndicator> {
-  bool _isExpanded = false;
   Timer? _autoCloseTimer;
 
   double get _contextPercentage {
@@ -43,21 +42,25 @@ class _ContextIndicatorState extends State<ContextIndicator> {
     return AppColors.error;
   }
 
-  void _toggleExpanded() {
-    setState(() {
-      _isExpanded = !_isExpanded;
-    });
+  void _showContextModal() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (ctx) => _ContextModal(
+        contextInfo: widget.contextInfo!,
+        percentage: _contextPercentage,
+        color: _contextColor,
+      ),
+    );
 
-    if (_isExpanded) {
-      _autoCloseTimer?.cancel();
-      _autoCloseTimer = Timer(const Duration(seconds: 4), () {
-        if (mounted && _isExpanded) {
-          setState(() {
-            _isExpanded = false;
-          });
-        }
-      });
-    }
+    // Auto-close after 4 seconds
+    _autoCloseTimer?.cancel();
+    _autoCloseTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    });
   }
 
   @override
@@ -73,89 +76,217 @@ class _ContextIndicatorState extends State<ContextIndicator> {
     }
 
     return GestureDetector(
-      onTap: _toggleExpanded,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-        padding: EdgeInsets.symmetric(
-          horizontal: _isExpanded ? 16 : 6,
-          vertical: _isExpanded ? 10 : 6,
+      onTap: _showContextModal,
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                value: _contextPercentage,
+                strokeWidth: 2.5,
+                backgroundColor:
+                    AppColors.border(context).withValues(alpha: 0.2),
+                valueColor: AlwaysStoppedAnimation<Color>(_contextColor),
+              ),
+            ),
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: _contextColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _ContextModal extends StatelessWidget {
+  final String contextInfo;
+  final double percentage;
+  final Color color;
+
+  const _ContextModal({
+    required this.contextInfo,
+    required this.percentage,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Container(
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: _isExpanded
-              ? AppColors.surfaceLight(context)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(_isExpanded ? 12 : 20),
-          border: _isExpanded
-              ? Border.all(
-                  color: AppColors.border(context).withValues(alpha: 0.3),
-                  width: 1,
-                )
-              : null,
+          color: AppColors.surface(context),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: AppColors.border(context).withValues(alpha: 0.3),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-        child: _isExpanded ? _buildExpandedView() : _buildCircularIndicator(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header with close button
+            Row(
+              children: [
+                Text(
+                  'Context Usage',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary(context),
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight(context),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppColors.textSecondary(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            // Circular progress indicator
+            SizedBox(
+              width: 120,
+              height: 120,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 120,
+                    height: 120,
+                    child: CircularProgressIndicator(
+                      value: percentage,
+                      strokeWidth: 8,
+                      backgroundColor:
+                          AppColors.border(context).withValues(alpha: 0.15),
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${(percentage * 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary(context),
+                        ),
+                      ),
+                      Text(
+                        'used',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Context info
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceLight(context).withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          contextInfo,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textPrimary(context),
+                            fontFamily: 'monospace',
+                            letterSpacing: 0.3,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Status message
+            Text(
+              _getStatusMessage(percentage),
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary(context),
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildCircularIndicator() {
-    return SizedBox(
-      width: 28,
-      height: 28,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(
-              value: _contextPercentage,
-              strokeWidth: 2.5,
-              backgroundColor:
-                  AppColors.border(context).withValues(alpha: 0.2),
-              valueColor: AlwaysStoppedAnimation<Color>(_contextColor),
-            ),
-          ),
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: _contextColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpandedView() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(
-            value: _contextPercentage,
-            strokeWidth: 2,
-            backgroundColor:
-                AppColors.border(context).withValues(alpha: 0.2),
-            valueColor: AlwaysStoppedAnimation<Color>(_contextColor),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          widget.contextInfo!,
-          style: TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary(context),
-            fontFamily: 'monospace',
-            letterSpacing: 0.2,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
+  String _getStatusMessage(double percentage) {
+    if (percentage < 0.5) {
+      return 'Plenty of context available for your conversation';
+    } else if (percentage < 0.75) {
+      return 'Context usage is moderate, still good room available';
+    } else if (percentage < 0.9) {
+      return 'Context is getting full, consider starting a new chat';
+    } else {
+      return 'Context limit nearly reached, new chat recommended';
+    }
   }
 }
