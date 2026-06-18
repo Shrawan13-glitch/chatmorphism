@@ -96,13 +96,36 @@ class VfsNode {
         .contains(extension);
   }
 
-  factory VfsNode.fromEntity(FileSystemEntity entity, String vfsPath) {
+  static Future<int> _dirSize(Directory dir) async {
+    var total = 0;
+    try {
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is File) {
+          try {
+            total += await entity.length();
+          } catch (_) {}
+        } else if (entity is Directory) {
+          final stat = await entity.stat();
+          total += stat.size; // dir entry size
+          total += await _dirSize(entity);
+        }
+      }
+    } catch (_) {}
+    return total;
+  }
+
+  static Future<VfsNode> fromEntity(
+      FileSystemEntity entity, String vfsPath) async {
     final stat = entity.statSync();
+    var size = stat.size;
+    if (entity is Directory) {
+      size += await _dirSize(entity);
+    }
     return VfsNode(
       name: p.basename(entity.path),
       vfsPath: vfsPath,
       type: entity is Directory ? VfsNodeType.directory : VfsNodeType.file,
-      size: stat.size,
+      size: size,
       modifiedAt: stat.modified,
       isHidden: entity.uri.pathSegments.last.startsWith('.'),
     );

@@ -69,7 +69,7 @@ class VfsService {
 
     for (final entity in entities) {
       final entityPath = _toVfs(entity.path);
-      final node = VfsNode.fromEntity(entity, entityPath);
+      final node = await VfsNode.fromEntity(entity, entityPath);
       if (!node.isHidden) {
         nodes.add(node);
       }
@@ -86,21 +86,15 @@ class VfsService {
 
   Future<VfsNode> stat(String vfsPath) async {
     final abs = _toAbsolute(vfsPath);
-    final entity = FileSystemEntity.typeSync(abs);
-    if (entity == FileSystemEntityType.notFound) {
+    final entityStat = FileSystemEntity.typeSync(abs);
+    if (entityStat == FileSystemEntityType.notFound) {
       throw VfsNotFoundException(vfsPath);
     }
 
-    final stat = File(abs).statSync();
-    return VfsNode(
-      name: p.basename(abs),
-      vfsPath: vfsPath,
-      type: entity == FileSystemEntityType.directory
-          ? VfsNodeType.directory
-          : VfsNodeType.file,
-      size: stat.size,
-      modifiedAt: stat.modified,
-    );
+    final FileSystemEntity entity = entityStat == FileSystemEntityType.directory
+        ? Directory(abs)
+        : File(abs);
+    return await VfsNode.fromEntity(entity, vfsPath);
   }
 
   Future<String> readFileAsString(String vfsPath) async {
