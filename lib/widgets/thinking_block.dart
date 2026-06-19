@@ -62,25 +62,16 @@ class _ThinkingBlockState extends State<ThinkingBlock>
       animation: _glowAnimation,
       builder: (context, child) {
         return Container(
-          margin: const EdgeInsets.only(bottom: 8),
+          margin: const EdgeInsets.only(bottom: 4),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             color: AppColors.surfaceLight(context).withValues(alpha: 0.08),
             border: Border.all(
               color: widget.isStreaming
-                  ? AppColors.accent.withValues(alpha: 0.25)
-                  : AppColors.border(context).withValues(alpha: 0.15),
+                  ? AppColors.accent.withValues(alpha: 0.2)
+                  : AppColors.border(context).withValues(alpha: 0.12),
               width: 1,
             ),
-            boxShadow: widget.isStreaming
-                ? [
-                    BoxShadow(
-                      color: AppColors.accent.withValues(alpha: 0.08),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
             gradient: widget.isStreaming
                 ? LinearGradient(
                     begin: Alignment.centerLeft,
@@ -88,7 +79,7 @@ class _ThinkingBlockState extends State<ThinkingBlock>
                     colors: [
                       AppColors.accent.withValues(alpha: 0),
                       AppColors.accent.withValues(
-                        alpha: 0.06 * (_glowAnimation.value.clamp(0.0, 1.0)),
+                        alpha: 0.04 * (_glowAnimation.value.clamp(0.0, 1.0)),
                       ),
                       AppColors.accent.withValues(alpha: 0),
                     ],
@@ -105,73 +96,55 @@ class _ThinkingBlockState extends State<ThinkingBlock>
             children: [
               InkWell(
                 onTap: () => setState(() => _expanded = !_expanded),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Animated brain/thinking icon
-                      AnimatedBuilder(
-                        animation: _glowController,
-                        builder: (context, child) {
-                          return Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: AppColors.accent.withValues(
-                                alpha: widget.isStreaming ? 0.15 : 0.08,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: widget.isStreaming
-                                  ? [
-                                      BoxShadow(
-                                        color: AppColors.accent.withValues(alpha: 0.3),
-                                        blurRadius: 6,
-                                        spreadRadius: 1,
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: Icon(
-                              widget.isStreaming
-                                  ? Icons.psychology_rounded
-                                  : Icons.lightbulb_outline_rounded,
-                              size: 16,
-                              color: AppColors.accent.withValues(
-                                alpha: widget.isStreaming
-                                    ? 0.5 + 0.5 * (_glowAnimation.value.clamp(0.0, 1.0))
-                                    : 0.7,
-                              ),
-                            ),
-                          );
-                        },
+                      Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(
+                            alpha: widget.isStreaming ? 0.15 : 0.08,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(
+                          widget.isStreaming
+                              ? Icons.psychology_rounded
+                              : Icons.lightbulb_outline_rounded,
+                          size: 13,
+                          color: AppColors.accent.withValues(
+                            alpha: widget.isStreaming ? 0.7 : 0.6,
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 10),
-                      // Thinking label
+                      const SizedBox(width: 6),
                       Text(
                         'Thinking',
                         style: TextStyle(
                           color: widget.isStreaming
-                              ? AppColors.accent.withValues(alpha: 0.9)
-                              : AppColors.textSecondary(context).withValues(alpha: 0.7),
-                          fontSize: 14,
+                              ? AppColors.accent.withValues(alpha: 0.85)
+                              : AppColors.textSecondary(context).withValues(alpha: 0.65),
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           letterSpacing: -0.2,
                         ),
                       ),
                       if (widget.isStreaming) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         _buildStreamingDots(),
                       ],
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       AnimatedRotation(
                         duration: const Duration(milliseconds: 200),
                         turns: _expanded ? 0.5 : 0,
                         child: Icon(
                           Icons.keyboard_arrow_down_rounded,
-                          size: 18,
-                          color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+                          size: 16,
+                          color: AppColors.textSecondary(context).withValues(alpha: 0.45),
                         ),
                       ),
                     ],
@@ -180,24 +153,24 @@ class _ThinkingBlockState extends State<ThinkingBlock>
               ),
               if (_expanded)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  padding: const EdgeInsets.fromLTRB(10, 2, 10, 8),
                   child: widget.isStreaming
                       ? Text(
                           widget.content.isNotEmpty
                               ? '${widget.content} ...'
                               : 'Processing thoughts ...',
                           style: TextStyle(
-                            color: AppColors.textSecondary(context).withValues(alpha: 0.8),
-                            fontSize: 13,
+                            color: AppColors.textSecondary(context).withValues(alpha: 0.75),
+                            fontSize: 12,
                             height: 1.5,
                           ),
                         )
                       : Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: AppColors.background(context).withValues(alpha: 0.4),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                             border: Border.all(
                               color: AppColors.border(context).withValues(alpha: 0.2),
                               width: 1,
@@ -235,7 +208,7 @@ class _ThinkingBlockState extends State<ThinkingBlock>
                 '·',
                 style: TextStyle(
                   color: AppColors.accent.withValues(alpha: active ? 0.8 : 0.3),
-                  fontSize: 14,
+                  fontSize: 12,
                   fontWeight: FontWeight.w900,
                 ),
               ),

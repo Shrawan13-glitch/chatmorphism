@@ -14,44 +14,37 @@ class WorkThread extends StatefulWidget {
   State<WorkThread> createState() => _WorkThreadState();
 }
 
-class _WorkThreadState extends State<WorkThread>
-    with SingleTickerProviderStateMixin {
+class _WorkThreadState extends State<WorkThread> {
   bool _masterExpanded = false;
-  late AnimationController _glowController;
-  late Animation<double> _glowAnimation;
+  DateTime? _startTime;
+  int? _elapsedSeconds;
 
   @override
   void initState() {
     super.initState();
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
-    _glowAnimation = Tween<double>(begin: -1.0, end: 2.0).animate(
-      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
-    );
-    _checkAndStartGlow();
+    _checkAndRecordTime();
   }
 
   @override
   void didUpdateWidget(WorkThread oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _checkAndStartGlow();
+    _checkAndRecordTime();
   }
 
-  void _checkAndStartGlow() {
+  void _checkAndRecordTime() {
     final isActive = widget.entries.any((e) => e.isStreaming);
     if (isActive) {
-      _glowController.repeat();
+      _startTime ??= DateTime.now();
+      _elapsedSeconds = null;
     } else {
-      _glowController.stop();
-      _glowController.reset();
+      if (_startTime != null && _elapsedSeconds == null) {
+        _elapsedSeconds = DateTime.now().difference(_startTime!).inSeconds;
+      }
     }
   }
 
   @override
   void dispose() {
-    _glowController.dispose();
     super.dispose();
   }
 
@@ -62,144 +55,64 @@ class _WorkThreadState extends State<WorkThread>
     final isActive = widget.entries.any((e) => e.isStreaming);
     final totalSteps = thinkingCount + toolCount;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildHeader(isActive, totalSteps),
-          if (_masterExpanded) ...[
-            const SizedBox(height: 8),
-            _buildTimeline(context),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildHeader(isActive, totalSteps),
+        if (_masterExpanded) ...[
+          const SizedBox(height: 8),
+          _buildTimeline(context),
         ],
-      ),
+      ],
     );
   }
 
   Widget _buildHeader(bool isActive, int totalSteps) {
     return InkWell(
       onTap: () => setState(() => _masterExpanded = !_masterExpanded),
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedBuilder(
-        animation: _glowAnimation,
-        builder: (context, child) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: AppColors.surfaceLight(context).withValues(alpha: 0.1),
-              border: Border.all(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              isActive
+                  ? 'Working...'
+                  : (_elapsedSeconds != null
+                      ? 'Worked ${_elapsedSeconds}s'
+                      : 'Work'),
+              style: TextStyle(
                 color: isActive
-                    ? AppColors.primary.withValues(alpha: 0.3)
-                    : AppColors.border(context).withValues(alpha: 0.15),
-                width: 1,
+                    ? AppColors.primary
+                    : AppColors.textSecondary(context).withValues(alpha: 0.7),
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
               ),
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        blurRadius: 12,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : null,
-              gradient: isActive
-                  ? LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        AppColors.primary.withValues(alpha: 0),
-                        AppColors.primary.withValues(
-                          alpha: 0.08 * (_glowAnimation.value.clamp(0.0, 1.0)),
-                        ),
-                        AppColors.primary.withValues(alpha: 0),
-                      ],
-                      stops: [
-                        0.0,
-                        _glowAnimation.value.clamp(0.0, 1.0),
-                        1.0,
-                      ],
-                    )
-                  : null,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Animated glow dot
-                AnimatedBuilder(
-                  animation: _glowController,
-                  builder: (context, child) {
-                    return Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isActive
-                            ? AppColors.primary.withValues(
-                                alpha: 0.5 + 0.5 * (_glowAnimation.value.clamp(0.0, 1.0)),
-                              )
-                            : AppColors.textSecondary(context).withValues(alpha: 0.4),
-                        boxShadow: isActive
-                            ? [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: 0.5),
-                                  blurRadius: 8,
-                                  spreadRadius: 2,
-                                ),
-                              ]
-                            : null,
-                      ),
-                    );
-                  },
+            if (totalSteps > 0) ...[
+              const SizedBox(width: 6),
+              Text(
+                '$totalSteps step${totalSteps > 1 ? 's' : ''}',
+                style: TextStyle(
+                  color: AppColors.textSecondary(context).withValues(alpha: 0.45),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
                 ),
-                const SizedBox(width: 10),
-                // Status text
-                Text(
-                  isActive ? 'Working' : 'Work',
-                  style: TextStyle(
-                    color: isActive
-                        ? AppColors.primary.withValues(alpha: 0.9)
-                        : AppColors.textSecondary(context).withValues(alpha: 0.7),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                if (totalSteps > 0) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$totalSteps step${totalSteps > 1 ? 's' : ''}',
-                      style: TextStyle(
-                        color: AppColors.primary.withValues(alpha: 0.8),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ),
-                ],
-                const SizedBox(width: 8),
-                AnimatedRotation(
-                  duration: const Duration(milliseconds: 200),
-                  turns: _masterExpanded ? 0.5 : 0,
-                  child: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 18,
-                    color: AppColors.textSecondary(context).withValues(alpha: 0.5),
-                  ),
-                ),
-              ],
+              ),
+            ],
+            const SizedBox(width: 4),
+            AnimatedRotation(
+              duration: const Duration(milliseconds: 200),
+              turns: _masterExpanded ? 0.5 : 0,
+              child: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 16,
+                color: AppColors.textSecondary(context).withValues(alpha: 0.4),
+              ),
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }
