@@ -14,24 +14,63 @@ class WorkThread extends StatefulWidget {
   State<WorkThread> createState() => _WorkThreadState();
 }
 
-class _WorkThreadState extends State<WorkThread> {
+class _WorkThreadState extends State<WorkThread>
+    with SingleTickerProviderStateMixin {
   bool _masterExpanded = false;
+  late AnimationController _glowController;
+  late Animation<double> _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+    _glowAnimation = Tween<double>(begin: -1.0, end: 2.0).animate(
+      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
+    );
+    _checkAndStartGlow();
+  }
+
+  @override
+  void didUpdateWidget(WorkThread oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _checkAndStartGlow();
+  }
+
+  void _checkAndStartGlow() {
+    final isActive = widget.entries.any((e) => e.isStreaming);
+    if (isActive) {
+      _glowController.repeat();
+    } else {
+      _glowController.stop();
+      _glowController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _glowController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final thinkingCount = widget.entries.whereType<ThinkingEntry>().length;
     final toolCount = widget.entries.whereType<ToolCallEntry>().length;
     final isActive = widget.entries.any((e) => e.isStreaming);
+    final totalSteps = thinkingCount + toolCount;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildHeader(isActive, thinkingCount, toolCount),
+          _buildHeader(isActive, totalSteps),
           if (_masterExpanded) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             _buildTimeline(context),
           ],
         ],
@@ -39,53 +78,128 @@ class _WorkThreadState extends State<WorkThread> {
     );
   }
 
-  Widget _buildHeader(bool isActive, int thinkingCount, int toolCount) {
+  Widget _buildHeader(bool isActive, int totalSteps) {
     return InkWell(
       onTap: () => setState(() => _masterExpanded = !_masterExpanded),
-      borderRadius: BorderRadius.circular(2),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Status and counts - clean, minimal
-            Text(
-              isActive ? 'working' : 'work',
-              style: TextStyle(
-                color: AppColors.textSecondary(context).withValues(alpha: 0.5),
-                fontSize: 11,
-                fontFamily: 'monospace',
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedBuilder(
+        animation: _glowAnimation,
+        builder: (context, child) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: AppColors.surfaceLight(context).withValues(alpha: 0.1),
+              border: Border.all(
+                color: isActive
+                    ? AppColors.primary.withValues(alpha: 0.3)
+                    : AppColors.border(context).withValues(alpha: 0.15),
+                width: 1,
               ),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        blurRadius: 12,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+              gradient: isActive
+                  ? LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        AppColors.primary.withValues(alpha: 0),
+                        AppColors.primary.withValues(
+                          alpha: 0.08 * (_glowAnimation.value.clamp(0.0, 1.0)),
+                        ),
+                        AppColors.primary.withValues(alpha: 0),
+                      ],
+                      stops: [
+                        0.0,
+                        _glowAnimation.value.clamp(0.0, 1.0),
+                        1.0,
+                      ],
+                    )
+                  : null,
             ),
-            if (thinkingCount > 0 || toolCount > 0) ...[
-              const SizedBox(width: 6),
-              Text(
-                '·',
-                style: TextStyle(
-                  color: AppColors.textSecondary(context).withValues(alpha: 0.25),
-                  fontSize: 11,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Animated glow dot
+                AnimatedBuilder(
+                  animation: _glowController,
+                  builder: (context, child) {
+                    return Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isActive
+                            ? AppColors.primary.withValues(
+                                alpha: 0.5 + 0.5 * (_glowAnimation.value.clamp(0.0, 1.0)),
+                              )
+                            : AppColors.textSecondary(context).withValues(alpha: 0.4),
+                        boxShadow: isActive
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.5),
+                                  blurRadius: 8,
+                                  spreadRadius: 2,
+                                ),
+                              ]
+                            : null,
+                      ),
+                    );
+                  },
                 ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${thinkingCount + toolCount}',
-                style: TextStyle(
-                  color: AppColors.textSecondary(context).withValues(alpha: 0.4),
-                  fontSize: 10,
-                  fontFamily: 'monospace',
+                const SizedBox(width: 10),
+                // Status text
+                Text(
+                  isActive ? 'Working' : 'Work',
+                  style: TextStyle(
+                    color: isActive
+                        ? AppColors.primary.withValues(alpha: 0.9)
+                        : AppColors.textSecondary(context).withValues(alpha: 0.7),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-              ),
-            ],
-            const SizedBox(width: 6),
-            Icon(
-              _masterExpanded
-                  ? Icons.keyboard_arrow_up_rounded
-                  : Icons.keyboard_arrow_down_rounded,
-              size: 14,
-              color: AppColors.textSecondary(context).withValues(alpha: 0.3),
+                if (totalSteps > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$totalSteps step${totalSteps > 1 ? 's' : ''}',
+                      style: TextStyle(
+                        color: AppColors.primary.withValues(alpha: 0.8),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 8),
+                AnimatedRotation(
+                  duration: const Duration(milliseconds: 200),
+                  turns: _masterExpanded ? 0.5 : 0,
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -93,7 +207,15 @@ class _WorkThreadState extends State<WorkThread> {
   Widget _buildTimeline(BuildContext context) {
     final entries = widget.entries;
     return Container(
-      padding: const EdgeInsets.only(left: 0),
+      padding: const EdgeInsets.only(left: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: AppColors.border(context).withValues(alpha: 0.2),
+            width: 2,
+          ),
+        ),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -101,7 +223,8 @@ class _WorkThreadState extends State<WorkThread> {
           for (int i = 0; i < entries.length; i++)
             Padding(
               padding: EdgeInsets.only(
-                top: i == 0 ? 0 : 2,
+                top: i == 0 ? 0 : 4,
+                bottom: i == entries.length - 1 ? 0 : 4,
               ),
               child: _buildEntryContent(entries[i]),
             ),
@@ -142,55 +265,5 @@ class _WorkThreadState extends State<WorkThread> {
       default:
         return const SizedBox.shrink();
     }
-  }
-}
-
-class _EntryFadeIn extends StatefulWidget {
-  final Widget child;
-
-  const _EntryFadeIn({required this.child, super.key});
-
-  @override
-  State<_EntryFadeIn> createState() => _EntryFadeInState();
-}
-
-class _EntryFadeInState extends State<_EntryFadeIn>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _opacity;
-  late Animation<Offset> _slide;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _opacity = Tween(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
-    _slide = Tween<Offset>(
-      begin: const Offset(0, -0.04),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _opacity,
-      child: SlideTransition(
-        position: _slide,
-        child: widget.child,
-      ),
-    );
   }
 }

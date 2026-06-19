@@ -17,100 +17,223 @@ class ToolCallBlock extends StatefulWidget {
   State<ToolCallBlock> createState() => _ToolCallBlockState();
 }
 
-class _ToolCallBlockState extends State<ToolCallBlock> {
+class _ToolCallBlockState extends State<ToolCallBlock>
+    with SingleTickerProviderStateMixin {
   bool _expanded = false;
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _pulseAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+    if (widget.isStreaming) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(ToolCallBlock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isStreaming && !oldWidget.isStreaming) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isStreaming && oldWidget.isStreaming) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   String _toolLabel(String name) {
-    // Convert snake_case to readable format
-    return name.replaceAll('_', ' ');
+    // Convert snake_case to Title Case
+    final words = name.split('_');
+    return words.map((w) => w.isNotEmpty 
+        ? '${w[0].toUpperCase()}${w.substring(1)}' 
+        : w
+    ).join(' ');
   }
 
-  String _getStatusText() {
-    if (widget.toolCall.error) return 'error';
-    if (widget.toolCall.completed) return 'done';
-    if (widget.isStreaming) return 'running';
-    return 'pending';
+  IconData _toolIcon(String name) {
+    return switch (name) {
+      'read_file' || 'read_files' => Icons.description_outlined,
+      'write_file' || 'fs_write' || 'fs_append' => Icons.edit_note_outlined,
+      'execute_bash' || 'execute' => Icons.terminal_outlined,
+      'search' || 'grep_search' || 'file_search' => Icons.search_outlined,
+      'web_fetch' || 'remote_web_search' => Icons.language_outlined,
+      'list_directory' => Icons.folder_outlined,
+      'delete_file' => Icons.delete_outline,
+      _ => Icons.extension_outlined,
+    };
   }
 
-  Color _getStatusColor(BuildContext context) {
+  (String status, Color color, IconData icon) _getStatusInfo() {
     if (widget.toolCall.error) {
-      return AppColors.error.withValues(alpha: 0.7);
+      return ('Error', AppColors.error, Icons.error_outline_rounded);
     }
-    return AppColors.textSecondary(context);
+    if (widget.toolCall.completed) {
+      return ('Done', AppColors.success, Icons.check_circle_outline_rounded);
+    }
+    if (widget.isStreaming) {
+      return ('Running', AppColors.accent, Icons.hourglass_empty_rounded);
+    }
+    return ('Pending', AppColors.textSecondary(context), Icons.schedule_rounded);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
+    final (status, statusColor, statusIcon) = _getStatusInfo();
+    final toolIcon = _toolIcon(widget.toolCall.name);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: AppColors.surfaceLight(context).withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(4),
+        color: AppColors.surfaceLight(context).withValues(alpha: _expanded ? 0.12 : 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _expanded 
+              ? AppColors.border(context).withValues(alpha: 0.3)
+              : Colors.transparent,
+          width: 1,
+        ),
+        boxShadow: _expanded
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header row
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(12),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
-                  // Tool name - monospace, low opacity
+                  // Tool icon
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      toolIcon,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Tool name
                   Expanded(
                     child: Text(
                       _toolLabel(widget.toolCall.name),
                       style: TextStyle(
-                        color: AppColors.textSecondary(context).withValues(alpha: 0.65),
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        letterSpacing: 0,
+                        color: AppColors.textPrimary(context).withValues(alpha: 0.9),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.2,
                       ),
                     ),
                   ),
-                  // Status text - minimal, inline
-                  Text(
-                    _getStatusText(),
-                    style: TextStyle(
-                      color: _getStatusColor(context).withValues(alpha: 0.5),
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                    ),
+                  // Status badge
+                  AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (context, child) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(
+                            alpha: widget.isStreaming ? 0.15 * _pulseAnimation.value : 0.12,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: statusColor.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              statusIcon,
+                              size: 12,
+                              color: statusColor.withValues(
+                                alpha: widget.isStreaming ? _pulseAnimation.value : 1.0,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              status,
+                              style: TextStyle(
+                                color: statusColor.withValues(
+                                  alpha: widget.isStreaming ? _pulseAnimation.value : 1.0,
+                                ),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   // Expand indicator
-                  Icon(
-                    _expanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    size: 14,
-                    color: AppColors.textSecondary(context).withValues(alpha: 0.3),
+                  AnimatedRotation(
+                    duration: const Duration(milliseconds: 200),
+                    turns: _expanded ? 0.5 : 0,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: AppColors.textSecondary(context).withValues(alpha: 0.5),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          // Expanded content - clean, no heavy containers
-          if (_expanded)
+          // Expanded content
+          if (_expanded) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(6, 2, 6, 6),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Arguments
-                  _buildDetailSection(
+                  // Arguments section
+                  _buildSection(
                     context,
-                    'input',
-                    JsonEncoder.withIndent('  ')
-                        .convert(widget.toolCall.arguments),
+                    'Input',
+                    Icons.input_outlined,
+                    JsonEncoder.withIndent('  ').convert(widget.toolCall.arguments),
                   ),
-                  // Result or Error
+                  // Result or Error section
                   if (widget.toolCall.result != null) ...[
-                    const SizedBox(height: 8),
-                    _buildDetailSection(
+                    const SizedBox(height: 10),
+                    _buildSection(
                       context,
-                      widget.toolCall.error ? 'error' : 'output',
+                      widget.toolCall.error ? 'Error' : 'Output',
+                      widget.toolCall.error ? Icons.error_outline : Icons.output_outlined,
                       widget.toolCall.result!,
                       isError: widget.toolCall.error,
                     ),
@@ -118,53 +241,74 @@ class _ToolCallBlockState extends State<ToolCallBlock> {
                 ],
               ),
             ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildDetailSection(
+  Widget _buildSection(
     BuildContext context,
     String label,
+    IconData icon,
     String content, {
     bool isError = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Label - minimal, monospace
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4, left: 1),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: AppColors.textSecondary(context).withValues(alpha: 0.4),
-              fontSize: 9,
-              fontFamily: 'monospace',
-              letterSpacing: 0.5,
+        // Section header
+        Row(
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isError
+                  ? AppColors.error.withValues(alpha: 0.7)
+                  : AppColors.textSecondary(context).withValues(alpha: 0.5),
             ),
-          ),
+            const SizedBox(width: 6),
+            Text(
+              label.toUpperCase(),
+              style: TextStyle(
+                color: isError
+                    ? AppColors.error.withValues(alpha: 0.7)
+                    : AppColors.textSecondary(context).withValues(alpha: 0.5),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ],
         ),
-        // Content - subtle background, clean
+        const SizedBox(height: 8),
+        // Content container
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: AppColors.background(context).withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(3),
+            color: isError
+                ? AppColors.error.withValues(alpha: 0.06)
+                : AppColors.background(context).withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isError
+                  ? AppColors.error.withValues(alpha: 0.15)
+                  : AppColors.border(context).withValues(alpha: 0.2),
+              width: 1,
+            ),
           ),
-          child: Text(
+          child: SelectableText(
             content,
             style: TextStyle(
               color: isError
-                  ? AppColors.error.withValues(alpha: 0.85)
-                  : AppColors.textSecondary(context).withValues(alpha: 0.8),
-              fontSize: 11,
+                  ? AppColors.error.withValues(alpha: 0.9)
+                  : AppColors.textPrimary(context).withValues(alpha: 0.85),
+              fontSize: 12,
               fontFamily: 'monospace',
-              height: 1.4,
+              height: 1.5,
             ),
-            maxLines: 50,
-            overflow: TextOverflow.ellipsis,
+            maxLines: 30,
           ),
         ),
       ],
