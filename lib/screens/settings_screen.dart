@@ -960,66 +960,67 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
     }
   }
 
+  String? _deviceCode;
+
   void _startPolling(String deviceCode, int interval) {
+    _deviceCode = deviceCode;
+    _pollNow();
     _pollTimer = Timer.periodic(Duration(seconds: interval), (_) async {
-      if (!mounted || _oauth == null) return;
+      await _pollNow();
+    });
+  }
 
-      try {
-        final result = await _oauth!.pollForToken(deviceCode,
-            interval: interval);
+  Future<void> _pollNow() async {
+    if (!mounted || _oauth == null || !_isLoggingIn || _deviceCode == null) return;
 
+    try {
+      final result = await _oauth!.pollForToken(_deviceCode!);
+      if (!mounted) return;
+
+      if (result.isSuccess) {
+        _pollTimer?.cancel();
+        setState(() => _statusMessage = 'Verifying...');
+
+        final username = await _oauth!.fetchUsername(result.accessToken!);
         if (!mounted) return;
 
-        if (result.isSuccess) {
-          _pollTimer?.cancel();
-
-          setState(() => _statusMessage = 'Verifying...');
-
-          final username =
-              await _oauth!.fetchUsername(result.accessToken!);
-          if (!mounted) return;
-
-          if (username != null) {
-            widget.chatProvider.githubAuth
-                .restore(result.accessToken!, username);
-            await widget.settings
-                .setGithubCredentials(result.accessToken!, username);
-            widget.chatProvider.initGithub();
-
-            if (mounted) {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Connected as @$username'),
-                  backgroundColor: AppColors.surface(context),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
-          } else {
-            setState(() {
-              _isLoggingIn = false;
-              _statusMessage =
-                  'Failed to verify user. Try again.';
-            });
+        if (username != null) {
+          widget.chatProvider.githubAuth.restore(result.accessToken!, username);
+          await widget.settings.setGithubCredentials(result.accessToken!, username);
+          widget.chatProvider.initGithub();
+          if (mounted) {
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Connected as @$username'),
+                backgroundColor: AppColors.surface(context),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
           }
-        } else if (result.isSlowDown) {
-          // Increase poll interval automatically
-        } else if (!result.isPending) {
-          _pollTimer?.cancel();
+        } else {
           setState(() {
             _isLoggingIn = false;
-            _statusMessage =
-                'Error: ${result.errorDescription ?? result.error}';
+            _statusMessage = 'Failed to verify user. Try again.';
           });
         }
-      } catch (e) {
-        if (!mounted) return;
+      } else if (result.isSlowDown) {
+        // poll interval was too fast — Timer.periodic handles the next tick
+      } else if (!result.isPending) {
+        _pollTimer?.cancel();
         setState(() {
-          _statusMessage = 'Error: $e';
+          _isLoggingIn = false;
+          _statusMessage = 'Error: ${result.errorDescription ?? result.error}';
         });
       }
-    });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Still waiting...');
+    }
+  }
+
+  void _manualCheck() {
+    _pollNow();
   }
 
   @override
@@ -1141,21 +1142,29 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Waiting for authorization...',
+                      'After authorizing on GitHub, tap Check:',
                       style: TextStyle(
                         color: AppColors.textSecondary(context),
                         fontSize: 12,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _manualCheck,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text("I've authorized — Check now"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),

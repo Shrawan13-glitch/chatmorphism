@@ -67,10 +67,7 @@ class GithubOauthService {
     return DeviceFlowResponse.fromJson(data);
   }
 
-  Future<TokenResponse> pollForToken(String deviceCode,
-      {int interval = 5}) async {
-    await Future.delayed(Duration(seconds: interval));
-
+  Future<TokenResponse> pollForToken(String deviceCode) async {
     final resp = await _client.post(
       Uri.parse('https://github.com/login/oauth/access_token'),
       headers: {
