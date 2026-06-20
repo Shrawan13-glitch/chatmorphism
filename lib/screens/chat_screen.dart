@@ -13,6 +13,7 @@ import '../widgets/model_selector.dart';
 import '../widgets/work_thread.dart';
 import '../widgets/message_actions.dart';
 import '../widgets/context_indicator.dart';
+import '../widgets/bouncing_dots.dart';
 import '../models/thread_entry.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -223,20 +224,16 @@ class _ChatScreenState extends State<ChatScreen> {
     return Consumer<ChatProvider>(
       builder: (context, provider, _) {
         _scrollDebounce?.cancel();
-        _scrollDebounce = Timer(const Duration(milliseconds: 80), () {
+        _scrollDebounce = Timer(const Duration(milliseconds: 120), () {
           if (!_scrollController.hasClients) return;
           final maxScroll = _scrollController.position.maxScrollExtent;
           final currentScroll = _scrollController.offset;
           if (maxScroll - currentScroll < 150) {
-            if (provider.isGenerating) {
-              _scrollController.jumpTo(maxScroll);
-            } else {
-              _scrollController.animateTo(
-                maxScroll,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-              );
-            }
+            _scrollController.animateTo(
+              maxScroll,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOutCubic,
+            );
           }
         });
 
@@ -379,6 +376,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
     flushWork();
+
+    if (isStreaming) {
+      segments.add(const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: BouncingDots(),
+      ));
+    }
 
     return segments;
   }
