@@ -50,6 +50,8 @@ class SettingsScreen extends StatelessWidget {
           _buildSystemPromptTile(context),
           const SizedBox(height: 4),
           _buildAppPromptTile(context),
+          const SizedBox(height: 4),
+          _buildWebFetchTile(context),
           const SizedBox(height: 24),
           _buildSectionHeader(context, 'Providers'),
           const SizedBox(height: 8),
@@ -286,6 +288,128 @@ class SettingsScreen extends StatelessWidget {
                   color: AppColors.textSecondary(context).withValues(alpha: 0.3)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebFetchTile(BuildContext context) {
+    final settings = context.watch<SettingsProvider>();
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border(context)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showWebFetchTimeoutDialog(context, settings),
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(Icons.public_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary(context)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Web fetch timeout',
+                          style: TextStyle(
+                              color: AppColors.textPrimary(context),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Power fetch (WebView) fallback timeout',
+                        style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  '${settings.webFetchTimeout}s',
+                  style: TextStyle(
+                    color: AppColors.textPrimary(context),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showWebFetchTimeoutDialog(
+      BuildContext context, SettingsProvider settings) {
+    var tempValue = settings.webFetchTimeout.toDouble();
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: AppColors.surface(context),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text('Web fetch timeout',
+              style: TextStyle(color: AppColors.textPrimary(ctx))),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'How long to wait for pages to load in the WebView fallback.',
+                style: TextStyle(
+                    color: AppColors.textSecondary(ctx), fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                '${tempValue.round()} seconds',
+                style: TextStyle(
+                  color: AppColors.textPrimary(ctx),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Slider(
+                value: tempValue,
+                min: 5,
+                max: 120,
+                divisions: 23,
+                activeColor: AppColors.primary,
+                inactiveColor: AppColors.border(context),
+                onChanged: (v) => setState(() => tempValue = v),
+              ),
+              Text(
+                'Range: 5–120 seconds',
+                style: TextStyle(
+                    color: AppColors.textSecondary(ctx), fontSize: 11),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary(ctx))),
+            ),
+            TextButton(
+              onPressed: () {
+                settings.setWebFetchTimeout(tempValue.round());
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Save',
+                  style: TextStyle(color: AppColors.primary)),
+            ),
+          ],
         ),
       ),
     );

@@ -14,6 +14,7 @@ class SettingsProvider extends ChangeNotifier {
   List<String> _favoriteModelIds = [];
   List<AiModel> _availableModels = [];
   bool _modelsLoaded = false;
+  int _webFetchTimeout = 20;
 
   ThemeMode get themeMode => _themeMode;
   String get apiKey => _apiKey;
@@ -28,6 +29,7 @@ class SettingsProvider extends ChangeNotifier {
   List<AiModel> get availableModels => _availableModels;
   bool get modelsLoaded => _modelsLoaded;
   bool get hasApiKey => _apiKey.isNotEmpty;
+  int get webFetchTimeout => _webFetchTimeout;
 
   static const String defaultAppPrompt = '''You are Kino, a helpful AI assistant.
 
@@ -70,6 +72,11 @@ Be thorough and thoughtful in your responses. Provide clear, well-structured ans
       _favoriteModelIds = (jsonDecode(favIds) as List)
           .map((e) => e.toString())
           .toList();
+    }
+
+    final timeout = await _db.getSetting('web_fetch_timeout');
+    if (timeout != null) {
+      _webFetchTimeout = int.tryParse(timeout) ?? 20;
     }
 
     final cached = await _db.getSetting('cached_models');
@@ -135,6 +142,12 @@ Be thorough and thoughtful in your responses. Provide clear, well-structured ans
   }
 
   bool isFavorite(String modelId) => _favoriteModelIds.contains(modelId);
+
+  Future<void> setWebFetchTimeout(int seconds) async {
+    _webFetchTimeout = seconds.clamp(5, 120);
+    await _db.setSetting('web_fetch_timeout', _webFetchTimeout.toString());
+    notifyListeners();
+  }
 
   Future<void> clearApiKey() async {
     _apiKey = '';

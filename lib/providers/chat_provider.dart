@@ -502,7 +502,22 @@ class ChatProvider extends ChangeNotifier {
       OpenRouterService.makeToolDefinition(
         name: 'fetch_url',
         description:
-            'Fetch and read the text content of a web page. Returns stripped text up to ~50KB. Use this to get detailed information from a specific URL.',
+            'Fetch and read text content of a web page. Uses a simple HTTP request. May fail on sites that require JavaScript or have bot protection (Cloudflare, etc.). Returns stripped text up to ~50KB.',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'url': {
+              'type': 'string',
+              'description': 'The URL of the web page to fetch',
+            },
+          },
+          'required': ['url'],
+        },
+      ),
+      OpenRouterService.makeToolDefinition(
+        name: 'power_fetch_url',
+        description:
+            'Fetch a web page using a headless WebView (full browser engine). Renders JavaScript and bypasses most bot protection. Slower but more reliable than fetch_url. Returns stripped text up to ~50KB.',
         parameters: {
           'type': 'object',
           'properties': {
@@ -664,15 +679,32 @@ class ChatProvider extends ChangeNotifier {
         return sb.toString().trim();
 
       case 'fetch_url':
-        final url = arguments['url'] as String?;
-        if (url == null || url.isEmpty) {
+        final fetchUrl = arguments['url'] as String?;
+        if (fetchUrl == null || fetchUrl.isEmpty) {
           return 'Error: url parameter is required for fetch_url';
         }
-        final content = await _webFetchService.fetchContent(url);
-        if (content == null) {
-          return 'Failed to fetch content from $url. The page might be unreachable or blocked.';
+        final fetchContent = await _webFetchService.fetchContent(
+          fetchUrl,
+          timeoutSeconds: _settingsProvider.webFetchTimeout,
+        );
+        if (fetchContent == null) {
+          return 'Failed to fetch content from $fetchUrl. The page may be unreachable, blocked, or requires JavaScript. Try power_fetch_url instead.';
         }
-        return 'Content from $url:\n\n$content';
+        return 'Content from $fetchUrl:\n\n$fetchContent';
+
+      case 'power_fetch_url':
+        final powerUrl = arguments['url'] as String?;
+        if (powerUrl == null || powerUrl.isEmpty) {
+          return 'Error: url parameter is required for power_fetch_url';
+        }
+        final powerContent = await _webFetchService.powerFetchContent(
+          powerUrl,
+          timeoutSeconds: _settingsProvider.webFetchTimeout,
+        );
+        if (powerContent == null) {
+          return 'Failed to fetch content from $powerUrl. The page may be unreachable or requires login.';
+        }
+        return 'Content from $powerUrl:\n\n$powerContent';
 
       case 'write_file':
         final path = arguments['path'] as String?;
