@@ -89,7 +89,7 @@ class _WorkThreadState extends State<WorkThread> {
     return InkWell(
       onTap: () => setState(() => _masterExpanded = !_masterExpanded),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
