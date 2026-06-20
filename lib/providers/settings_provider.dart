@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/ai_model.dart';
+import '../services/github/github_api_service.dart';
 
 class SettingsProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
@@ -15,6 +16,9 @@ class SettingsProvider extends ChangeNotifier {
   List<AiModel> _availableModels = [];
   bool _modelsLoaded = false;
   int _webFetchTimeout = 20;
+  String _githubToken = '';
+  String _githubUsername = '';
+  String _githubClientId = '';
 
   ThemeMode get themeMode => _themeMode;
   String get apiKey => _apiKey;
@@ -30,6 +34,11 @@ class SettingsProvider extends ChangeNotifier {
   bool get modelsLoaded => _modelsLoaded;
   bool get hasApiKey => _apiKey.isNotEmpty;
   int get webFetchTimeout => _webFetchTimeout;
+  String get githubToken => _githubToken;
+  String get githubUsername => _githubUsername;
+  String get githubClientId => _githubClientId;
+  bool get isGithubConnected => _githubToken.isNotEmpty;
+  bool get hasGithubClientId => _githubClientId.isNotEmpty;
 
   static const String defaultAppPrompt = '''You are Kino, a helpful AI assistant.
 
@@ -78,6 +87,11 @@ Be thorough and thoughtful in your responses. Provide clear, well-structured ans
     if (timeout != null) {
       _webFetchTimeout = int.tryParse(timeout) ?? 20;
     }
+
+    _githubToken = (await _db.getSetting('github_token')) ?? '';
+    _githubUsername = (await _db.getSetting('github_username')) ?? '';
+    _githubClientId = (await _db.getSetting('github_client_id')) ??
+        GithubApiService.defaultClientId;
 
     final cached = await _db.getSetting('cached_models');
     if (cached != null && cached.isNotEmpty) {
@@ -146,6 +160,28 @@ Be thorough and thoughtful in your responses. Provide clear, well-structured ans
   Future<void> setWebFetchTimeout(int seconds) async {
     _webFetchTimeout = seconds.clamp(5, 120);
     await _db.setSetting('web_fetch_timeout', _webFetchTimeout.toString());
+    notifyListeners();
+  }
+
+  Future<void> setGithubCredentials(String token, String username) async {
+    _githubToken = token;
+    _githubUsername = username;
+    await _db.setSetting('github_token', token);
+    await _db.setSetting('github_username', username);
+    notifyListeners();
+  }
+
+  Future<void> setGithubClientId(String clientId) async {
+    _githubClientId = clientId;
+    await _db.setSetting('github_client_id', clientId);
+    notifyListeners();
+  }
+
+  Future<void> clearGithubCredentials() async {
+    _githubToken = '';
+    _githubUsername = '';
+    await _db.setSetting('github_token', '');
+    await _db.setSetting('github_username', '');
     notifyListeners();
   }
 

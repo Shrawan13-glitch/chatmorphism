@@ -44,6 +44,8 @@ dependencies:
   archive: ^4.0.9
   flutter_native_html_to_pdf: ^3.1.0
   package_info_plus: ^10.1.0
+  audioplayers: ^6.1.0
+  mime: ^2.0.0
 
 dev_dependencies:
   flutter_test:

@@ -13,6 +13,9 @@ import '../services/openrouter_service.dart';
 import '../services/search/search_service.dart';
 import '../services/search/webfetch_service.dart';
 import '../services/vfs/vfs_service.dart';
+import '../services/github/github_auth_service.dart';
+import '../services/tts/tts_service.dart';
+import '../services/tts/tts_result.dart';
 import '../utils/content_parser.dart';
 import 'settings_provider.dart';
 import '../services/debug_service.dart';
@@ -27,10 +30,24 @@ class ChatProvider extends ChangeNotifier {
   late final SearchService _searchService;
   late final WebFetchService _webFetchService;
   final ToolExecutionService _toolExec = ToolExecutionService();
+  final GithubAuthService _githubAuth = GithubAuthService();
+  TtsService? _ttsService;
 
   ChatProvider(this._settingsProvider) {
     _searchService = SearchService();
     _webFetchService = WebFetchService();
+  }
+
+  GithubAuthService get githubAuth => _githubAuth;
+
+  void initGithub() {
+    if (_settingsProvider.isGithubConnected) {
+      _githubAuth.restore(
+        _settingsProvider.githubToken,
+        _settingsProvider.githubUsername,
+      );
+      _ttsService = TtsService(_githubAuth);
+    }
   }
 
   List<Chat> _chats = [];
@@ -635,6 +652,53 @@ class ChatProvider extends ChangeNotifier {
           'required': ['html', 'output'],
         },
       ),
+      OpenRouterService.makeToolDefinition(
+        name: 'generate_speech',
+        description:
+            'Generate high-quality speech audio from text using ShryneTTS. '
+            'Converts text to natural-sounding speech with multiple voice options. '
+            'Supports multi-segment generation — provide an items array for podcast-style output '
+            'with different voices and speeds per segment. Requires GitHub connection.',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'items': {
+              'type': 'array',
+              'description':
+                  'Array of speech segments. Each item has: text (required), voice (optional, default "af_sky"), '
+                  'speed (optional, default 1.0). For podcasts, provide multiple items with different voices.',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'text': {
+                    'type': 'string',
+                    'description': 'Text to speak for this segment',
+                  },
+                  'voice': {
+                    'type': 'string',
+                    'description':
+                        'Voice ID. American English female: af_bella, af_sky, af_sarah, af_nicole, af_heart, af_river. '
+                        'American English male: am_adam, am_echo, am_liam, am_michael, am_onyx. '
+                        'British English female: bf_alice, bf_emma, bf_lily. '
+                        'British English male: bm_daniel, bm_george, bm_lewis. Default: "af_sky"',
+                  },
+                  'speed': {
+                    'type': 'number',
+                    'description': 'Speech speed from 0.5 to 2.0. Default: 1.0',
+                  },
+                },
+                'required': ['text'],
+              },
+            },
+            'output': {
+              'type': 'string',
+              'description':
+                  'Output WAV file path in VFS (e.g. "speech.wav" or "podcasts/episode.wav")',
+            },
+          },
+          'required': ['items', 'output'],
+        },
+      ),
 
     ];
   }
@@ -759,12 +823,41 @@ class ChatProvider extends ChangeNotifier {
 
           final vfs = VfsService();
           final resolved = output.startsWith('/') ? output : '/$output';
-          await vfs.writeFile(output, pdfBytes);
+          await vfs.writeFile(resolved, pdfBytes);
 
           return 'PDF generated successfully: $resolved (${pdfBytes.length} bytes)';
         } catch (e) {
           return 'Error generating PDF: $e';
         }
+
+      case 'generate_speech':
+        if (!_settingsProvider.isGithubConnected) {
+          return 'Error: GitHub not connected. Go to Settings > ShryneTTS to connect your GitHub account. '
+              'A public repository will be created on your account to run TTS generation via GitHub Actions.';
+        }
+
+        final itemsRaw = arguments['items'];
+        if (itemsRaw == null || (itemsRaw is List && itemsRaw.isEmpty)) {
+          return 'Error: items parameter is required for generate_speech';
+        }
+
+        final itemsList = itemsRaw as List;
+        final ttsItems = itemsList.map((item) {
+          final map = item as Map<String, dynamic>;
+          return TtsItem(
+            text: map['text'] as String? ?? '',
+            voice: map['voice'] as String? ?? 'af_sky',
+            speed: (map['speed'] as num?)?.toDouble() ?? 1.0,
+          );
+        }).toList();
+
+        final outputPath = arguments['output'] as String? ?? 'speech.wav';
+
+        _ttsService ??= TtsService(_githubAuth);
+        return await _ttsService!.generateSpeech(
+          items: ttsItems,
+          outputPath: outputPath,
+        );
 
       default:
         final args =

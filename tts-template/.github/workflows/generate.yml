@@ -1,0 +1,32 @@
+name: ShryneTTS
+on:
+  workflow_dispatch:
+    inputs:
+      items:
+        description: 'JSON array: [{"text":"...","voice":"af_sky","speed":1.0}]'
+        required: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate speech segments
+        id: tts
+        uses: Shrawan13-glitch/tts-action@v1
+        with:
+          items: ${{ github.event.inputs.items }}
+          output-dir: segments
+
+      - name: Merge segments into single WAV
+        run: |
+          pip install pydub -q
+          python .github/scripts/merge.py
+        env:
+          AUDIO_PATHS: ${{ steps.tts.outputs.audio-paths }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tts-output
+          path: merged.wav

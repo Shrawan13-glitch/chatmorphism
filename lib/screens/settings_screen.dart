@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../constants.dart';
 import '../providers/settings_provider.dart';
 import '../providers/chat_provider.dart';
+import '../services/github/github_oauth_service.dart';
 import 'models_screen.dart';
 import 'system_prompt_screen.dart';
 import 'app_prompt_screen.dart';
@@ -56,6 +58,10 @@ class SettingsScreen extends StatelessWidget {
           _buildSectionHeader(context, 'Providers'),
           const SizedBox(height: 8),
           _buildProviderTile(context),
+          const SizedBox(height: 24),
+          _buildSectionHeader(context, 'ShryneTTS'),
+          const SizedBox(height: 8),
+          _buildGithubTile(context),
           const SizedBox(height: 24),
           _buildSectionHeader(context, 'Data'),
           const SizedBox(height: 8),
@@ -533,6 +539,153 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildGithubTile(BuildContext context) {
+    final settings = context.watch<SettingsProvider>();
+    final chatProvider = context.watch<ChatProvider>();
+    final isConnected = settings.isGithubConnected;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border(context)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showGithubDialog(context, settings, chatProvider),
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(Icons.volume_up_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary(context)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('ShryneTTS Speech',
+                          style: TextStyle(
+                              color: AppColors.textPrimary(context),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 2),
+                      Text(
+                        isConnected
+                            ? 'Connected as @${settings.githubUsername}'
+                            : 'Connect GitHub to enable TTS',
+                        style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isConnected)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '@${settings.githubUsername}',
+                      style: TextStyle(
+                        color: AppColors.success,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Setup',
+                      style: TextStyle(
+                        color: AppColors.error,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showGithubDialog(BuildContext context, SettingsProvider settings,
+      ChatProvider chatProvider) {
+    if (settings.isGithubConnected) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface(context),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text('ShryneTTS',
+              style: TextStyle(color: AppColors.textPrimary(ctx))),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Connected as @${settings.githubUsername}',
+                style: TextStyle(
+                    color: AppColors.textSecondary(ctx), fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'When the AI calls generate_speech, a GitHub Actions workflow '
+                'runs on your public repository to generate high-quality speech.',
+                style: TextStyle(
+                    color: AppColors.textSecondary(ctx), fontSize: 13),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                chatProvider.githubAuth.clear();
+                settings.clearGithubCredentials();
+                Navigator.of(ctx).pop();
+              },
+              child: Text('Disconnect',
+                  style: TextStyle(color: AppColors.error)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Done',
+                  style: TextStyle(color: AppColors.primary)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => _GithubLoginDialog(
+        settings: settings,
+        chatProvider: chatProvider,
+      ),
+    );
+  }
+
   Widget _buildDataOptions(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
@@ -736,6 +889,317 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _GithubLoginDialog extends StatefulWidget {
+  final SettingsProvider settings;
+  final ChatProvider chatProvider;
+
+  const _GithubLoginDialog({
+    required this.settings,
+    required this.chatProvider,
+  });
+
+  @override
+  State<_GithubLoginDialog> createState() => _GithubLoginDialogState();
+}
+
+class _GithubLoginDialogState extends State<_GithubLoginDialog> {
+  final _clientIdController = TextEditingController();
+  bool _isLoggingIn = false;
+  String? _userCode;
+  String? _verificationUri;
+  String? _statusMessage;
+  Timer? _pollTimer;
+  GithubOauthService? _oauth;
+
+  @override
+  void initState() {
+    super.initState();
+    _clientIdController.text = widget.settings.githubClientId;
+  }
+
+  @override
+  void dispose() {
+    _clientIdController.dispose();
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _startLogin() async {
+    final clientId = _clientIdController.text.trim();
+    if (clientId.isEmpty) return;
+
+    if (clientId != widget.settings.githubClientId) {
+      await widget.settings.setGithubClientId(clientId);
+    }
+
+    setState(() {
+      _isLoggingIn = true;
+      _statusMessage = 'Requesting device code...';
+    });
+
+    try {
+      _oauth = GithubOauthService(clientId: clientId);
+      final deviceFlow = await _oauth!.requestDeviceCode();
+
+      setState(() {
+        _userCode = deviceFlow.userCode;
+        _verificationUri = deviceFlow.verificationUri;
+        _statusMessage = null;
+      });
+
+      _startPolling(deviceFlow.deviceCode, deviceFlow.interval);
+    } catch (e) {
+      setState(() {
+        _isLoggingIn = false;
+        _statusMessage = 'Error: $e';
+      });
+    }
+  }
+
+  void _startPolling(String deviceCode, int interval) {
+    _pollTimer = Timer.periodic(Duration(seconds: interval), (_) async {
+      if (!mounted || _oauth == null) return;
+
+      try {
+        final result = await _oauth!.pollForToken(deviceCode,
+            interval: interval);
+
+        if (!mounted) return;
+
+        if (result.isSuccess) {
+          _pollTimer?.cancel();
+
+          setState(() => _statusMessage = 'Verifying...');
+
+          final username =
+              await _oauth!.fetchUsername(result.accessToken!);
+          if (!mounted) return;
+
+          if (username != null) {
+            widget.chatProvider.githubAuth
+                .restore(result.accessToken!, username);
+            await widget.settings
+                .setGithubCredentials(result.accessToken!, username);
+            widget.chatProvider.initGithub();
+
+            if (mounted) {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Connected as @$username'),
+                  backgroundColor: AppColors.surface(context),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          } else {
+            setState(() {
+              _isLoggingIn = false;
+              _statusMessage =
+                  'Failed to verify user. Try again.';
+            });
+          }
+        } else if (result.isSlowDown) {
+          // Increase poll interval automatically
+        } else if (!result.isPending) {
+          _pollTimer?.cancel();
+          setState(() {
+            _isLoggingIn = false;
+            _statusMessage =
+                'Error: ${result.errorDescription ?? result.error}';
+          });
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _statusMessage = 'Error: $e';
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: Text(
+        _isLoggingIn ? 'Authorize ShryneTTS' : 'Connect GitHub',
+        style: TextStyle(color: AppColors.textPrimary(context)),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Login with your GitHub account to enable TTS generation.',
+              style: TextStyle(
+                  color: AppColors.textSecondary(context), fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+
+            if (!widget.settings.hasGithubClientId && !_isLoggingIn) ...[
+              Text(
+                'GitHub OAuth App Client ID:',
+                style: TextStyle(
+                    color: AppColors.textPrimary(context), fontSize: 13,
+                    fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Create one at: github.com/settings/developers',
+                style: TextStyle(
+                    color: AppColors.primary, fontSize: 11),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _clientIdController,
+                style: TextStyle(color: AppColors.textPrimary(context)),
+                decoration: InputDecoration(
+                  hintText: 'Iv1...',
+                  hintStyle: TextStyle(
+                    color: AppColors.textSecondary(context)
+                        .withValues(alpha: 0.4),
+                    fontSize: 14,
+                  ),
+                  filled: true,
+                  fillColor: AppColors.inputBg(context),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (!_isLoggingIn && _userCode == null) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _startLogin,
+                  icon: const Icon(Icons.login_rounded, size: 18),
+                  label: const Text('Login with GitHub'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            if (_userCode != null) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Enter this code on GitHub:',
+                      style: TextStyle(
+                        color: AppColors.textSecondary(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SelectableText(
+                      _userCode!,
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _verificationUri!,
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Waiting for authorization...',
+                      style: TextStyle(
+                        color: AppColors.textSecondary(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+
+            if (_statusMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _statusMessage!,
+                style: TextStyle(
+                  color: _statusMessage!.startsWith('Error')
+                      ? AppColors.error
+                      : AppColors.textSecondary(context),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+
+            if (!_isLoggingIn && _userCode == null) ...[
+              const SizedBox(height: 16),
+              Text(
+                'A public repository "tts-generator" will be created on your '
+                'account to run TTS via GitHub Actions.',
+                style: TextStyle(
+                    color: AppColors.textSecondary(context)
+                        .withValues(alpha: 0.6),
+                    fontSize: 11),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            _pollTimer?.cancel();
+            Navigator.of(context).pop();
+          },
+          child: Text(
+            _isLoggingIn ? 'Cancel' : 'Back',
+            style: TextStyle(color: AppColors.textSecondary(context)),
+          ),
+        ),
+      ],
     );
   }
 }
