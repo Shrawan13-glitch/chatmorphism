@@ -125,6 +125,9 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
             onPressed: () {
               if (isPlaying) {
                 _player.pause();
+              } else if (_state == PlayerState.completed) {
+                _player.seek(Duration.zero);
+                _player.resume();
               } else {
                 _player.resume();
               }

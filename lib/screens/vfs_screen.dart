@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../constants.dart';
 import '../providers/vfs_provider.dart';
 import '../services/vfs/vfs_node.dart';
+import '../widgets/audio_player_widget.dart';
 
 class VfsScreen extends StatefulWidget {
   final String initialPath;
@@ -267,9 +268,41 @@ class _VfsScreenState extends State<VfsScreen> {
       vfs.navigateTo(node.vfsPath);
     } else if (node.isTextFile) {
       _openTextFile(context, vfs, node);
+    } else if (node.isAudio) {
+      _playAudio(context, node);
     } else {
       vfs.share(node.name);
     }
+  }
+
+  void _playAudio(BuildContext context, VfsNode node) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary(context).withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              AudioPlayerWidget(vfsPath: node.vfsPath),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _openTextFile(BuildContext context, VfsProvider vfs, VfsNode node) {

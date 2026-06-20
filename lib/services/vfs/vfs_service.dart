@@ -26,7 +26,8 @@ class VfsService {
   }
 
   String _toAbsolute(String vfsPath) {
-    final clean = vfsPath.startsWith('/') ? vfsPath.substring(1) : vfsPath;
+    final parts = vfsPath.split('/').where((s) => s.isNotEmpty).toList();
+    final clean = parts.join('/');
     return p.join(_rootPath!, clean);
   }
 

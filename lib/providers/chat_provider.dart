@@ -98,6 +98,7 @@ class ChatProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    initGithub();
     _chats = await _db.getAllChats();
     await _searchService.init();
     _initialized = true;
