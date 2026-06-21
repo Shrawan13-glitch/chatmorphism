@@ -57,21 +57,19 @@ class HttpService {
     final request = http.StreamedRequest(method, uri);
     request.followRedirects = followRedirects;
 
-    final mergedHeaders = <String, String>{
+    request.headers.addAll(<String, String>{
       'User-Agent':
           'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
       'Accept': '*/*',
       'Accept-Language': 'en-US,en;q=0.9',
       ...?headers,
-    };
+    });
 
     if (body != null && body.isNotEmpty) {
-      mergedHeaders.putIfAbsent('Content-Type', () => _inferContentType(body));
+      request.headers.putIfAbsent('Content-Type', () => _inferContentType(body));
       request.sink.add(utf8.encode(body));
-      request.sink.close();
     }
-
-    request.headers.addAll(mergedHeaders);
+    request.sink.close();
 
     final streamedResponse = await _client
         .send(request)
