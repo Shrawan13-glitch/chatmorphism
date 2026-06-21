@@ -55,7 +55,7 @@ class GithubOauthService {
       },
       body: {
         'client_id': clientId,
-        'scope': 'repo workflow',
+        'scope': 'repo workflow delete_repo admin:org',
       },
     );
 

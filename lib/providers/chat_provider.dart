@@ -14,6 +14,8 @@ import '../services/search/search_service.dart';
 import '../services/search/webfetch_service.dart';
 import '../services/vfs/vfs_service.dart';
 import '../services/github/github_auth_service.dart';
+import '../services/github/github_integration_service.dart';
+import '../services/github/github_tool_service.dart';
 import '../services/tts/tts_service.dart';
 import '../services/tts/tts_result.dart';
 import '../utils/content_parser.dart';
@@ -31,6 +33,7 @@ class ChatProvider extends ChangeNotifier {
   late final WebFetchService _webFetchService;
   final ToolExecutionService _toolExec = ToolExecutionService();
   final GithubAuthService _githubAuth = GithubAuthService();
+  GithubIntegrationService? _githubIntegration;
   TtsService? _ttsService;
 
   ChatProvider(this._settingsProvider) {
@@ -46,8 +49,13 @@ class ChatProvider extends ChangeNotifier {
         _settingsProvider.githubToken,
         _settingsProvider.githubUsername,
       );
+      _githubIntegration = GithubIntegrationService(_githubAuth);
       _ttsService = TtsService(_githubAuth);
+    } else {
+      _githubIntegration = null;
+      _ttsService = null;
     }
+    GithubToolService.ensureInitialized();
   }
 
   List<Chat> _chats = [];
@@ -701,6 +709,7 @@ class ChatProvider extends ChangeNotifier {
         },
       ),
 
+      if (_githubIntegration != null) ...GithubToolService.toolDefinitions,
     ];
   }
 
@@ -861,6 +870,12 @@ class ChatProvider extends ChangeNotifier {
         );
 
       default:
+        if (name.startsWith('github_')) {
+          if (_githubIntegration == null) {
+            return 'Error: GitHub not connected. Go to Settings to connect your GitHub account.';
+          }
+          return await _githubIntegration!.executeTool(name, arguments);
+        }
         final args =
             (arguments['args'] as List?)?.cast<String>() ?? <String>[];
         final result = await _toolExec.runTool(

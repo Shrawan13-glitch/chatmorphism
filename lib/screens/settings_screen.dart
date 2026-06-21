@@ -59,7 +59,7 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 8),
           _buildProviderTile(context),
           const SizedBox(height: 24),
-          _buildSectionHeader(context, 'ShryneTTS'),
+          _buildSectionHeader(context, 'GitHub Integration'),
           const SizedBox(height: 8),
           _buildGithubTile(context),
           const SizedBox(height: 24),
@@ -567,7 +567,7 @@ class SettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('ShryneTTS Speech',
+                      Text('GitHub',
                           style: TextStyle(
                               color: AppColors.textPrimary(context),
                               fontSize: 15,
@@ -575,8 +575,8 @@ class SettingsScreen extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         isConnected
-                            ? 'Connected as @${settings.githubUsername}'
-                            : 'Connect GitHub to enable TTS',
+                            ? 'Connected as @${settings.githubUsername} · TTS + Agent tools'
+                            : 'Connect GitHub for TTS, repo management, CI/CD, and more',
                         style: TextStyle(
                             color: AppColors.textSecondary(context),
                             fontSize: 12),
@@ -636,7 +636,7 @@ class SettingsScreen extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          title: Text('ShryneTTS',
+          title: Text('GitHub Integration',
               style: TextStyle(color: AppColors.textPrimary(ctx))),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -649,10 +649,19 @@ class SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'When the AI calls generate_speech, a GitHub Actions workflow '
-                'runs on your public repository to generate high-quality speech.',
+                'The AI agent can manage repos, create branches and PRs, '
+                'trigger Actions workflows, browse files, and more.',
                 style: TextStyle(
                     color: AppColors.textSecondary(ctx), fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'TTS: generate_speech uses a GitHub Actions workflow '
+                'to run ShryneTTS and produce high-quality speech.',
+                style: TextStyle(
+                    color: AppColors.textSecondary(ctx)
+                        .withValues(alpha: 0.7),
+                    fontSize: 12),
               ),
             ],
           ),
@@ -1031,7 +1040,7 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
         borderRadius: BorderRadius.circular(16),
       ),
       title: Text(
-        _isLoggingIn ? 'Authorize ShryneTTS' : 'Connect GitHub',
+        _isLoggingIn ? 'Authorize GitHub Integration' : 'Connect GitHub',
         style: TextStyle(color: AppColors.textPrimary(context)),
       ),
       content: SingleChildScrollView(
@@ -1040,7 +1049,8 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Login with your GitHub account to enable TTS generation.',
+              'Login with your GitHub account to enable AI-powered repo management, '
+              'CI/CD, TTS generation, and more.',
               style: TextStyle(
                   color: AppColors.textSecondary(context), fontSize: 13),
             ),
@@ -1186,8 +1196,9 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
             if (!_isLoggingIn && _userCode == null) ...[
               const SizedBox(height: 16),
               Text(
-                'A public repository "tts-generator" will be created on your '
-                'account to run TTS via GitHub Actions.',
+                'The AI agent will use your GitHub account to manage repositories, '
+                'branches, PRs, Actions, and more. A public "tts-generator" repo '
+                'will be created for TTS via GitHub Actions.',
                 style: TextStyle(
                     color: AppColors.textSecondary(context)
                         .withValues(alpha: 0.6),
