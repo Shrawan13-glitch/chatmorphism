@@ -9,19 +9,17 @@
   <br/>
 
   <h1>✨ Kino</h1>
-  <p><strong>BYOK AI Chat — with on-device tool calling</strong></p>
-  <p><em>Your keys. Your models. Your data. Agentic AI, entirely on your phone.</em></p>
+  <p><strong>BYOK AI Chat — with on-device agentic tool calling</strong></p>
+  <p><em>Your keys. Your models. Your data. A full AI agent, entirely on your phone.</em></p>
 
   <br/>
 
-  <!-- Navigation -->
   <p>
     <a href="#features">Features</a> •
+    <a href="#demo">Demo</a> •
     <a href="#tech-stack">Tech Stack</a> •
     <a href="#getting-started">Getting Started</a> •
     <a href="#configuration">Configuration</a> •
-    <a href="#architecture">Architecture</a> •
-    <a href="#screenshots">Screenshots</a> •
     <a href="#license">License</a>
   </p>
 
@@ -40,28 +38,28 @@
         <p>Connect to <strong>OpenRouter</strong> with your own API key. Access hundreds of models from OpenAI, Anthropic, Google, Meta, Mistral, and more — all through a single endpoint.</p>
       </td>
       <td width="50%">
-        <h3>🛠️ On-Device Tool Calling</h3>
-        <p>The only BYOK chat app with <strong>true agentic tool calling on-device</strong>. The model can search the web and fetch URLs — all executed locally on your phone.</p>
+        <h3>🤖 Full GitHub Agent</h3>
+        <p>The AI can manage repos, branches, commits, files, PRs, Actions, issues, deploy keys, webhooks, secrets, environments, GitHub Pages, and more — 70+ tool actions, all executed on your device via the GitHub REST API.</p>
       </td>
     </tr>
     <tr>
+      <td width="50%">
+        <h3>🛠️ On-Device Tool Calling</h3>
+        <p>True agentic tool calling executed locally. The model can search the web (DuckDuckGo, Mojeek, Wikipedia), fetch URLs, and generate PDFs — no backend server required.</p>
+      </td>
       <td width="50%">
         <h3>💬 Streaming Responses</h3>
         <p>Real-time streaming with support for text chunks, reasoning/thought blocks, and tool call deltas. Watch the model think as it happens.</p>
       </td>
-      <td width="50%">
-        <h3>🌓 Dual Theme</h3>
-        <p>Beautiful Material Design 3 UI with Dark, Light, and System-follow themes. Carefully crafted color schemes for a premium feel.</p>
-      </td>
     </tr>
     <tr>
       <td width="50%">
-        <h3>🔍 Multi-Engine Search</h3>
-        <p>Built-in web search across <strong>DuckDuckGo</strong>, <strong>Mojeek</strong>, and <strong>Wikipedia</strong> — aggregated and de-duplicated. No external API keys needed.</p>
+        <h3>🎙️ Speech Generation</h3>
+        <p>Generate speech from AI responses via ShryneTTS, processed through a GitHub Actions pipeline. Animated audio player with morphing card UI.</p>
       </td>
       <td width="50%">
-        <h3>📤 Share & Export</h3>
-        <p>Copy responses as markdown, share them as rendered images, or export your entire chat history as JSON.</p>
+        <h3>🌓 Dual Theme</h3>
+        <p>Beautiful Material Design 3 UI with Dark, Light, and System-follow themes. Carefully crafted color schemes for a premium feel.</p>
       </td>
     </tr>
     <tr>
@@ -75,6 +73,14 @@
       </td>
     </tr>
   </table>
+</div>
+
+---
+
+## 🎬 Demo
+
+<div align="center">
+  <p><em>Coming soon</em></p>
 </div>
 
 ---
@@ -106,6 +112,14 @@
     <tr>
       <td>LLM Gateway</td>
       <td><img src="https://img.shields.io/badge/OpenRouter-API-ff6b6b" height="20" alt="OpenRouter"/></td>
+    </tr>
+    <tr>
+      <td>GitHub Integration</td>
+      <td>GitHub REST API · OAuth Device Flow</td>
+    </tr>
+    <tr>
+      <td>Speech</td>
+      <td>ShryneTTS · GitHub Actions pipeline</td>
     </tr>
     <tr>
       <td>Markdown Rendering</td>
@@ -156,92 +170,20 @@ flutter build apk --debug
 
 ## ⚙️ Configuration
 
+### OpenRouter (Required)
+
 1. **Launch the app** and navigate to the **Models** screen from Settings.
 2. **Enter your OpenRouter API key** and tap "Load" to fetch available models.
 3. **Select a model** as your default, and optionally mark favorites.
 4. **Start chatting** — the model can invoke web search and URL fetching tools on-device.
 
-> **Note:** Your API key is stored locally in SQLite and never leaves your device. Kino does not collect any data.
+### GitHub Integration (Optional)
 
----
+1. Navigate to **Settings → GitHub Integration**.
+2. Tap **Connect to GitHub** and complete the OAuth device flow.
+3. Once connected, the AI gains access to 70+ GitHub tools — ask it to create a repo, open a PR, trigger an Action, deploy Pages, or anything else.
 
-## 🏗️ Architecture
-
-<div>
-  <pre align="center" style="background:#f6f8fa; padding:16px; border-radius:8px; font-size:13px;">
-┌──────────────────────────────────────────────────────────┐
-│                     Flutter UI Layer                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
-│  │  Home    │  │  Chat    │  │ Settings │  │  Models  │ │
-│  │  Screen  │  │  Screen  │  │  Screen  │  │  Screen  │ │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘ │
-│       └──────────────┼─────────────┼──────────────┘       │
-│                      ▼             ▼                       │
-│  ┌─────────────────────────────────────────────────┐      │
-│  │            Provider Layer (State Mgmt)          │      │
-│  │  ┌───────────────┐      ┌──────────────────┐   │      │
-│  │  │ ChatProvider   │      │ SettingsProvider │   │      │
-│  │  └───────┬───────┘      └────────┬─────────┘   │      │
-│  └──────────┼───────────────────────┼──────────────┘      │
-│             ▼                       ▼                      │
-│  ┌─────────────────────────────────────────────────┐      │
-│  │              Service Layer                       │      │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │      │
-│  │  │OpenRouter│  │  Search  │  │ WebFetch     │  │      │
-│  │  │ Service  │  │  Service │  │ Service      │  │      │
-│  │  └──────────┘  └──────────┘  └──────────────┘  │      │
-│  └────────────────────┬────────────────────────────┘      │
-│                       ▼                                    │
-│  ┌─────────────────────────────────────────────────┐      │
-│  │            Data Layer                            │      │
-│  │  ┌────────────────┐  ┌──────────────────────┐  │      │
-│  │  │ SQLite (sqflite)│  │  Generation Manager  │  │      │
-│  │  └────────────────┘  └──────────────────────┘  │      │
-│  └─────────────────────────────────────────────────┘      │
-└──────────────────────────────────────────────────────────┘
-  </pre>
-</div>
-
-### Key Flows
-
-- **Chat Generation Loop:** User message → LLM request → Stream response → Tool call? → Execute on-device → Return to LLM → Final response
-- **Tool Execution:** `web_search` queries 3 engines (DuckDuckGo, Mojeek, Wikipedia) in parallel, de-duplicates results; `fetch_url` fetches & cleans HTML to plain text
-- **Data Persistence:** All chats, messages, and settings stored locally in SQLite with automatic migration support
-
----
-
-## 📸 Screenshots
-
-<div align="center">
-  <p><em>Screenshots coming soon</em></p>
-  <br/>
-  <table>
-    <tr>
-      <td align="center"><strong>Chat View</strong></td>
-      <td align="center"><strong>Settings</strong></td>
-      <td align="center"><strong>Model Selection</strong></td>
-    </tr>
-    <tr>
-      <td width="200" height="400" align="center" style="background:#f0f0f0; border-radius:12px;">
-        <code>✦</code>
-      </td>
-      <td width="200" height="400" align="center" style="background:#f0f0f0; border-radius:12px;">
-        <code>✦</code>
-      </td>
-      <td width="200" height="400" align="center" style="background:#f0f0f0; border-radius:12px;">
-        <code>✦</code>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
-## 🧪 Testing
-
-<pre>
-flutter test
-</pre>
+> **Note:** Your API key and GitHub token are stored locally in SQLite and never leave your device. Kino does not collect any data.
 
 ---
 
