@@ -84,6 +84,7 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
   String _displayedText = '';
   int _charIndex = 0;
   bool _erasing = false;
+  bool _showDone = false;
 
   @override
   void initState() {
@@ -101,9 +102,16 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
     });
     _generatePatterns();
     _initDots();
-    _startPatternCycle();
-    _startTypewriter();
     _setupAudio();
+
+    if (widget.isCompleted) {
+      _phase = _CardPhase.playing;
+      _fadeController.value = 1.0;
+      _loadAudio();
+    } else {
+      _startPatternCycle();
+      _startTypewriter();
+    }
   }
 
   void _setupAudio() {
@@ -307,42 +315,25 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
           final r = 0.15 + 0.2 * ((i % 12) / 12);
           targets.add(Offset(0.5 + r * cos(a), 0.5 + r * sin(a)));
         }
-      case 22: // Audio player layout (morph target)
-        final cdDots = 16;
-        final lineDots = 8;
-        final barDots = 8;
-        final btnDots = 4;
-        var idx = 0;
-        // CD: concentric rings on left
-        for (var i = 0; i < cdDots; i++, idx++) {
-          final t = i / cdDots * 2 * pi;
-          final r = (i < 12) ? 0.15 : 0.07;
-          targets.add(Offset(0.22 + r * cos(t), 0.45 + r * sin(t)));
+      case 22: // Thumbs up
+        // Thumb: 2 columns × 6 rows (12 dots)
+        for (var row = 0; row < 6; row++) {
+          final t = row / 5;
+          final y = 0.16 + t * 0.32;
+          targets.add(Offset(0.28 + t * 0.02, y));
+          targets.add(Offset(0.34 + t * 0.02, y));
         }
-        // Filename line at top
-        for (var i = 0; i < lineDots; i++, idx++) {
-          final x = 0.52 + i / lineDots * 0.38;
-          targets.add(Offset(x, 0.18));
-        }
-        // Progress bar (two rows)
-        for (var i = 0; i < barDots; i++, idx++) {
-          final x = 0.52 + (i % 4) / 4 * 0.38;
-          final y = 0.50 + (i ~/ 4) * 0.12;
-          targets.add(Offset(x, y));
-        }
-        // Play button triangle on right
-        for (var i = 0; i < btnDots; i++, idx++) {
-          if (i < 3) {
-            final t = (i / 3) * 2 * pi / 3 - pi / 6;
-            targets.add(Offset(0.88 + 0.06 * cos(t), 0.45 + 0.06 * sin(t)));
-          } else {
-            targets.add(const Offset(0.88, 0.45));
-          }
-        }
-        // Fill remaining
-        while (idx < n) {
-          targets.add(Offset(0.5 + _rng.nextDouble() * 0.4 - 0.2, 0.5 + _rng.nextDouble() * 0.3 - 0.15));
-          idx++;
+        // Knuckle bridge (2 dots)
+        targets.add(const Offset(0.28, 0.46));
+        targets.add(const Offset(0.34, 0.46));
+        // Fist: two concentric rings (26 dots)
+        for (var i = 8; i < n; i++) {
+          final ring = ((i - 8) * 2 ~/ (n - 8));
+          final ir = (i - 8) % ((n - 8) ~/ 2);
+          final cnt = (n - 8) ~/ 2;
+          final a = ir / cnt * 2 * pi;
+          final r = ring == 0 ? 0.14 : 0.22;
+          targets.add(Offset(0.52 + r * cos(a), 0.58 + r * sin(a) * 0.8));
         }
       default:
         for (var i = 0; i < n; i++) {
@@ -425,11 +416,18 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
     _typewriterTimer?.cancel();
     _displayedText = '';
     _charIndex = 0;
+    _showDone = false;
 
-    // Move dots to audio player layout
+    // Move dots to thumbs up
     _setPatternTargets(22);
 
-    // Wait for dots to settle, then crossfade
+    // After dots settle, show "Done"
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      setState(() => _showDone = true);
+    });
+
+    // Start crossfade to player
     Future.delayed(const Duration(milliseconds: 2500), () {
       if (!mounted) return;
       setState(() => _phase = _CardPhase.revealing);
@@ -479,9 +477,10 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
         final showPlayer = revealing || _phase == _CardPhase.playing;
         final dotsOpacity = revealing ? 1.0 - fadeValue : 1.0;
         final playerOpacity = revealing ? fadeValue : 1.0;
-        final showText = _phase == _CardPhase.loading || _phase == _CardPhase.morphing;
-        final textOpacity = _phase == _CardPhase.morphing
-            ? 1.0 - fadeValue.clamp(0, 1)
+        final showLoadingText = _phase == _CardPhase.loading;
+        final showDoneText = _showDone && _phase != _CardPhase.playing;
+        final textOpacity = _phase == _CardPhase.revealing
+            ? 1.0 - fadeValue
             : 1.0;
 
         return Container(
@@ -538,34 +537,70 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                child: Opacity(
-                  opacity: showText ? textOpacity : 0,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$_displayedText...',
-                        style: TextStyle(
-                          color: AppColors.primary.withValues(alpha: 0.85),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.3,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (showLoadingText)
+                      Opacity(
+                        opacity: textOpacity,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$_displayedText...',
+                              style: TextStyle(
+                                color: AppColors.primary.withValues(alpha: 0.85),
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'generating audio, please wait',
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context).withValues(alpha: 0.45),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      if (_phase == _CardPhase.loading) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'generating audio, please wait',
-                          style: TextStyle(
-                            color: AppColors.textSecondary(context).withValues(alpha: 0.45),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
+                    if (showDoneText)
+                      Opacity(
+                        opacity: textOpacity,
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.3, end: 1.0),
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.elasticOut,
+                          builder: (context, scale, child) {
+                            return Transform.scale(scale: scale, child: child);
+                          },
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.check_circle_rounded,
+                                color: AppColors.primary,
+                                size: 30,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Done',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 12),
-                    ],
-                  ),
+                      ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
             ],
@@ -581,67 +616,53 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
         : 0.0;
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          // CD icon + filename
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
+          const Spacer(flex: 2),
+          // CD icon at top center
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.35),
+                  AppColors.primary.withValues(alpha: 0.1),
+                ],
+              ),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.3),
+                width: 2.5,
+              ),
+            ),
+            child: Center(
+              child: Container(
+                width: 20,
+                height: 20,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.primary.withValues(alpha: 0.3),
-                      AppColors.primary.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.3),
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.primary.withValues(alpha: 0.4),
-                    ),
-                  ),
+                  color: AppColors.primary.withValues(alpha: 0.5),
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  widget.vfsPath.split('/').last,
-                  style: TextStyle(
-                    color: AppColors.textPrimary(context),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Seekbar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-              minHeight: 5,
             ),
           ),
-          const SizedBox(height: 6),
-          // Time + controls
+          const SizedBox(height: 14),
+          // Filename below CD
+          Text(
+            widget.vfsPath.split('/').last,
+            style: TextStyle(
+              color: AppColors.textPrimary(context),
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+          const Spacer(flex: 1),
+          // Seekable progress bar with time labels
           Row(
             children: [
               Text(
@@ -652,36 +673,25 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
-              const Spacer(),
-              // Play/Pause
-              GestureDetector(
-                onTap: () {
-                  if (_audioPlaying) {
-                    _audioPlayer.pause();
-                  } else if (_audioState == ProcessingState.completed) {
-                    _audioPlayer.seek(Duration.zero);
-                    _audioPlayer.play();
-                  } else {
-                    _audioPlayer.play();
-                  }
-                },
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.primary.withValues(alpha: 0.12),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    activeTrackColor: AppColors.primary,
+                    inactiveTrackColor: AppColors.primary.withValues(alpha: 0.15),
+                    thumbColor: AppColors.primary,
+                    overlayColor: AppColors.primary.withValues(alpha: 0.12),
+                    trackHeight: 4,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                   ),
-                  child: Icon(
-                    _audioPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    color: AppColors.primary,
-                    size: 22,
+                  child: Slider(
+                    value: progress.clamp(0.0, 1.0),
+                    onChanged: (v) {
+                      final ms = (v * _audioDuration.inMilliseconds).round();
+                      _audioPlayer.seek(Duration(milliseconds: ms));
+                    },
                   ),
                 ),
               ),
-              const Spacer(),
               Text(
                 _formatDuration(_audioDuration),
                 style: TextStyle(
@@ -692,6 +702,36 @@ class _SpeechGenerationCardState extends State<SpeechGenerationCard>
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          // Pause button centered
+          GestureDetector(
+            onTap: () {
+              if (_audioPlaying) {
+                _audioPlayer.pause();
+              } else if (_audioState == ProcessingState.completed) {
+                _audioPlayer.seek(Duration.zero);
+                _audioPlayer.play();
+              } else {
+                _audioPlayer.play();
+              }
+            },
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withValues(alpha: 0.12),
+              ),
+              child: Icon(
+                _audioPlaying
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
+                color: AppColors.primary,
+                size: 32,
+              ),
+            ),
+          ),
+          const Spacer(flex: 2),
         ],
       ),
     );
