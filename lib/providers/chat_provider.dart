@@ -22,6 +22,7 @@ import '../utils/content_parser.dart';
 import 'settings_provider.dart';
 import '../services/debug_service.dart';
 import '../services/tool_execution.dart';
+import '../services/http_service.dart';
 
 class ChatProvider extends ChangeNotifier {
   final SettingsProvider _settingsProvider;
@@ -33,6 +34,7 @@ class ChatProvider extends ChangeNotifier {
   late final WebFetchService _webFetchService;
   final ToolExecutionService _toolExec = ToolExecutionService();
   final GithubAuthService _githubAuth = GithubAuthService();
+  final HttpService _httpService = HttpService();
   GithubIntegrationService? _githubIntegration;
   TtsService? _ttsService;
 
@@ -555,6 +557,58 @@ class ChatProvider extends ChangeNotifier {
           'required': ['url'],
         },
       ),
+      OpenRouterService.makeToolDefinition(
+        name: 'http_request',
+        description:
+            'Make a full HTTP request to any URL with complete control. '
+            'Supports all methods, custom headers, request body, timeout, and redirect control. '
+            'Returns status code, response headers, and response body. '
+            'Use this to interact with REST APIs, submit forms, download data, '
+            'or access any HTTP endpoint. For simple page fetching, prefer fetch_url or power_fetch_url.',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'url': {
+              'type': 'string',
+              'description': 'The full URL to request (e.g. https://api.example.com/data)',
+            },
+            'method': {
+              'type': 'string',
+              'description':
+                  'HTTP method: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS (default: GET)',
+              'enum': ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
+            },
+            'headers': {
+              'type': 'object',
+              'description':
+                  'Custom HTTP headers as key-value pairs. '
+                  'Use this to set Authorization, Content-Type, Accept, etc. '
+                  'Example: {"Authorization": "Bearer token123", "Content-Type": "application/json"}',
+              'additionalProperties': {'type': 'string'},
+            },
+            'body': {
+              'type': 'string',
+              'description':
+                  'Request body as a string. For JSON APIs, pass a JSON string. '
+                  'For form submissions, pass URL-encoded data. '
+                  'Content-Type is auto-set if not specified: application/json for JSON-looking bodies, '
+                  'application/x-www-form-urlencoded for form data, text/plain otherwise.',
+            },
+            'timeout': {
+              'type': 'integer',
+              'description': 'Request timeout in seconds (default: 30, max: 120)',
+              'minimum': 1,
+              'maximum': 120,
+            },
+            'follow_redirects': {
+              'type': 'boolean',
+              'description': 'Whether to automatically follow redirects (default: true). '
+                  'Set to false to inspect redirect locations manually.',
+            },
+          },
+          'required': ['url'],
+        },
+      ),
 
       OpenRouterService.makeToolDefinition(
         name: 'write_file',
@@ -779,6 +833,40 @@ class ChatProvider extends ChangeNotifier {
           return 'Failed to fetch content from $powerUrl. The page may be unreachable or requires login.';
         }
         return 'Content from $powerUrl:\n\n$powerContent';
+
+      case 'http_request':
+        final requestUrl = arguments['url'] as String?;
+        if (requestUrl == null || requestUrl.isEmpty) {
+          return 'Error: url parameter is required for http_request';
+        }
+        final method = (arguments['method'] as String? ?? 'GET').toUpperCase();
+        final headers = arguments['headers'] as Map<String, dynamic>?;
+        final body = arguments['body'] as String?;
+        final timeout = arguments['timeout'] as int? ?? 30;
+        final followRedirects = arguments['follow_redirects'] as bool? ?? true;
+
+        final stringHeaders = <String, String>{};
+        if (headers != null) {
+          for (final e in headers.entries) {
+            if (e.value is String) {
+              stringHeaders[e.key] = e.value as String;
+            }
+          }
+        }
+
+        try {
+          final response = await _httpService.request(
+            url: requestUrl,
+            method: method,
+            headers: stringHeaders.isNotEmpty ? stringHeaders : null,
+            body: body,
+            timeout: Duration(seconds: timeout.clamp(1, 120)),
+            followRedirects: followRedirects,
+          );
+          return response.toString();
+        } catch (e) {
+          return 'HTTP request failed: $e';
+        }
 
       case 'write_file':
         final path = arguments['path'] as String?;
