@@ -77,6 +77,20 @@ class ChatProvider extends ChangeNotifier {
   List<Message> get messages => _messages;
   bool get isLoading => _isLoading;
   bool get isGenerating => _isGenerating;
+
+  bool get hasActiveTaskPlan {
+    if (_activeAiMessage == null) return false;
+    return _activeAiMessage!.entries.any((e) =>
+        e is TaskPlanEntry &&
+        e.tasks.any((t) =>
+            t.status == TaskStatus.inProgress ||
+            t.status == TaskStatus.pending));
+  }
+
+  TaskPlanEntry? get activeTaskPlan {
+    if (_activeAiMessage == null) return null;
+    return _activeAiMessage!.entries.whereType<TaskPlanEntry>().lastOrNull;
+  }
   bool get initialized => _initialized;
 
   String get _effectiveModel =>

@@ -12,6 +12,7 @@ import '../widgets/typing_indicator.dart';
 import '../widgets/model_selector.dart';
 import '../widgets/work_thread.dart';
 import '../widgets/task_plan_block.dart';
+import '../widgets/task_plan_banner.dart';
 import '../widgets/message_actions.dart';
 import '../widgets/context_indicator.dart';
 import '../widgets/bouncing_dots.dart';
@@ -222,11 +223,31 @@ class _ChatScreenState extends State<ChatScreen> {
         _messageKeys.removeWhere((id, _) =>
             !provider.messages.any((m) => m.id == id));
 
+        final activePlan = provider.activeTaskPlan;
+        final listTopPadding = activePlan != null ? 16.0 : 32.0;
+
         return Stack(
           children: [
-            ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
+            Column(
+              children: [
+                if (activePlan != null)
+                  TaskPlanBanner(
+                    plan: activePlan,
+                    onTap: () {
+                      final lastMsgIdx = provider.messages.length - 1;
+                      if (lastMsgIdx >= 0) {
+                        _scrollController.animateTo(
+                          _scrollController.position.minScrollExtent,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                        );
+                      }
+                    },
+                  ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: EdgeInsets.fromLTRB(20, listTopPadding, 20, 24),
               addAutomaticKeepAlives: false,
               addRepaintBoundaries: true,
               itemCount: provider.messages.length,
@@ -277,6 +298,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               );
               },
+            ),
+                ),
+              ],
             ),
             if (_showScrollButton)
               Positioned(
