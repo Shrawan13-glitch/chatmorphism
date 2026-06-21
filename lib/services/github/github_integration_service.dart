@@ -754,6 +754,71 @@ class GithubIntegrationService {
         );
         return 'Deploy key #${args['key_id']} deleted.';
 
+      // ── GitHub Pages ──
+      case 'github_get_pages':
+        final pages = await settings.getPages(
+          args['owner'] as String,
+          args['repo'] as String,
+        );
+        final status = pages['status'] as String? ?? 'not configured';
+        final url = pages['html_url'] as String? ?? pages['url'] as String? ?? 'N/A';
+        return 'GitHub Pages for ${args['owner']}/${args['repo']}:\n'
+            'Status: $status\n'
+            'URL: $url\n'
+            'Source: ${_formatPagesSource(pages['source'])}\n'
+            'Custom domain: ${pages['cname'] ?? '(none)'}\n'
+            'HTTPS enforced: ${pages['https_enforced'] == true ? 'yes' : 'no'}\n'
+            'Build: ${_formatPagesBuild(pages['build'])}';
+
+      case 'github_enable_pages':
+        final result = await settings.enablePages(
+          args['owner'] as String,
+          args['repo'] as String,
+          branch: args['branch'] as String,
+          path: args['path'] as String? ?? '/',
+        );
+        return 'GitHub Pages enabled.\n'
+            'Source: ${result['source']['branch']}/${result['source']['path']}\n'
+            'URL: ${result['html_url'] ?? result['url'] ?? 'pending'}';
+
+      case 'github_update_pages':
+        final result = await settings.updatePages(
+          args['owner'] as String,
+          args['repo'] as String,
+          branch: args['branch'] as String?,
+          path: args['path'] as String?,
+          cname: args['cname'] as String?,
+          httpsEnforced: args['https_enforced'] as bool?,
+        );
+        return 'GitHub Pages updated.\n'
+            '${result.isNotEmpty ? 'Changes applied.' : 'No changes needed.'}';
+
+      case 'github_delete_pages':
+        await settings.deletePages(
+          args['owner'] as String,
+          args['repo'] as String,
+        );
+        return 'GitHub Pages disabled for ${args['owner']}/${args['repo']}.';
+
+      case 'github_list_pages_builds':
+        final builds = await settings.listPagesBuilds(
+          args['owner'] as String,
+          args['repo'] as String,
+        );
+        if (builds.isEmpty) return 'No Pages builds found.';
+        return 'Recent Pages builds:\n${builds.map((b) {
+          return '  ${b['status']}: ${b['commit'] ?? '?'} '
+              '(${b['created_at']})'
+              '${b['error'] != null ? ' - ERROR: ${b['error']['message']}' : ''}';
+        }).join('\n')}';
+
+      case 'github_request_pages_build':
+        await settings.requestPagesBuild(
+          args['owner'] as String,
+          args['repo'] as String,
+        );
+        return 'Pages build requested for ${args['owner']}/${args['repo']}.';
+
       default:
         return 'Unknown GitHub tool: $name';
     }
@@ -896,6 +961,16 @@ class GithubIntegrationService {
         'Location: ${u['location'] ?? '(none)'}\n'
         'Blog: ${u['blog'] ?? '(none)'}\n'
         'Created: ${u['created_at']}';
+  }
+
+  String _formatPagesSource(dynamic source) {
+    if (source is! Map) return 'N/A';
+    return '${source['branch'] ?? '?'}/${source['path'] ?? '/'}';
+  }
+
+  String _formatPagesBuild(dynamic build) {
+    if (build is! Map) return 'N/A';
+    return '${build['status'] ?? '?'} (${build['commit'] ?? '?'})';
   }
 
   String _formatContentsList(dynamic data) {

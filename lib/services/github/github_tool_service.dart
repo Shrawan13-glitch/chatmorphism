@@ -1366,6 +1366,113 @@ class GithubToolService {
           },
         ),
 
+        // ── GitHub Pages ──
+        OpenRouterService.makeToolDefinition(
+          name: 'github_get_pages',
+          description:
+              'Get the current GitHub Pages configuration and status for a repository.',
+          parameters: {
+            'type': 'object',
+            'properties': {
+              'owner': {'type': 'string'},
+              'repo': {'type': 'string'},
+            },
+            'required': ['owner', 'repo'],
+          },
+        ),
+        OpenRouterService.makeToolDefinition(
+          name: 'github_enable_pages',
+          description:
+              'Enable GitHub Pages on a repository. Specify the branch and optional path '
+              '(default: "/" for root, or "/docs"). Use github_get_pages first to check current status.',
+          parameters: {
+            'type': 'object',
+            'properties': {
+              'owner': {'type': 'string'},
+              'repo': {'type': 'string'},
+              'branch': {
+                'type': 'string',
+                'description': 'Branch to deploy from (e.g., main, gh-pages)',
+              },
+              'path': {
+                'type': 'string',
+                'description':
+                    'Directory to deploy: "/" for root, "/docs" for /docs folder (default: "/")',
+              },
+            },
+            'required': ['owner', 'repo', 'branch'],
+          },
+        ),
+        OpenRouterService.makeToolDefinition(
+          name: 'github_update_pages',
+          description:
+              'Update GitHub Pages configuration: change source branch/path, set custom domain, '
+              'or enforce HTTPS.',
+          parameters: {
+            'type': 'object',
+            'properties': {
+              'owner': {'type': 'string'},
+              'repo': {'type': 'string'},
+              'branch': {
+                'type': 'string',
+                'description': 'Change the deployment branch',
+              },
+              'path': {
+                'type': 'string',
+                'description': 'Change the deployment directory',
+              },
+              'cname': {
+                'type': 'string',
+                'description': 'Custom domain (e.g., example.com)',
+              },
+              'https_enforced': {
+                'type': 'boolean',
+                'description': 'Enforce HTTPS for the Pages site',
+              },
+            },
+            'required': ['owner', 'repo'],
+          },
+        ),
+        OpenRouterService.makeToolDefinition(
+          name: 'github_delete_pages',
+          description:
+              'Disable GitHub Pages on a repository. This unpublishes the site.',
+          parameters: {
+            'type': 'object',
+            'properties': {
+              'owner': {'type': 'string'},
+              'repo': {'type': 'string'},
+            },
+            'required': ['owner', 'repo'],
+          },
+        ),
+        OpenRouterService.makeToolDefinition(
+          name: 'github_list_pages_builds',
+          description:
+              'List recent GitHub Pages builds for a repository. Shows build status and errors.',
+          parameters: {
+            'type': 'object',
+            'properties': {
+              'owner': {'type': 'string'},
+              'repo': {'type': 'string'},
+            },
+            'required': ['owner', 'repo'],
+          },
+        ),
+        OpenRouterService.makeToolDefinition(
+          name: 'github_request_pages_build',
+          description:
+              'Request a new GitHub Pages build. Use this to publish after making changes to the repo.',
+          parameters: {
+            'type': 'object',
+            'properties': {
+              'owner': {'type': 'string'},
+              'repo': {'type': 'string'},
+            },
+            'required': ['owner', 'repo'],
+          },
+        ),
+
         OpenRouterService.makeToolDefinition(
           name: 'github_get_user',
           description:

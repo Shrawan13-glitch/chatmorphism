@@ -274,4 +274,59 @@ class GithubSettingsService {
       String owner, String repo, int keyId) {
     return _client.delete('/repos/$owner/$repo/keys/$keyId');
   }
+
+  // ── GitHub Pages ──
+
+  Future<Map<String, dynamic>> getPages(String owner, String repo) {
+    return _client.get('/repos/$owner/$repo/pages');
+  }
+
+  Future<Map<String, dynamic>> enablePages(
+    String owner, String repo, {
+    required String branch,
+    String path = '/',
+  }) {
+    return _client.post('/repos/$owner/$repo/pages', body: {
+      'source': {
+        'branch': branch,
+        'path': path,
+      },
+    });
+  }
+
+  Future<Map<String, dynamic>> updatePages(
+    String owner, String repo, {
+    String? branch,
+    String? path,
+    String? cname,
+    bool? httpsEnforced,
+  }) {
+    final source = <String, dynamic>{};
+    if (branch != null) source['branch'] = branch;
+    if (path != null) source['path'] = path;
+    final body = <String, dynamic>{};
+    if (source.isNotEmpty) body['source'] = source;
+    if (cname != null) body['cname'] = cname;
+    if (httpsEnforced != null) body['https_enforced'] = httpsEnforced;
+    return _client.put('/repos/$owner/$repo/pages', body: body);
+  }
+
+  Future<void> deletePages(String owner, String repo) {
+    return _client.delete('/repos/$owner/$repo/pages');
+  }
+
+  Future<List<Map<String, dynamic>>> listPagesBuilds(
+      String owner, String repo, {int perPage = 30}) async {
+    return _client.getList('/repos/$owner/$repo/pages/builds',
+        query: {'per_page': perPage.toString()});
+  }
+
+  Future<Map<String, dynamic>> getLatestPagesBuild(
+      String owner, String repo) {
+    return _client.get('/repos/$owner/$repo/pages/builds/latest');
+  }
+
+  Future<void> requestPagesBuild(String owner, String repo) {
+    return _client.post('/repos/$owner/$repo/pages/builds');
+  }
 }
