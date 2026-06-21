@@ -20,10 +20,7 @@ class _VfsScreenState extends State<VfsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final vfs = context.read<VfsProvider>();
-      if (vfs.currentPath != widget.initialPath) {
-        vfs.navigateTo(widget.initialPath);
-      }
+      context.read<VfsProvider>().navigateTo(widget.initialPath);
     });
   }
 

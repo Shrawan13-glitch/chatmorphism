@@ -169,47 +169,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: ContextIndicator(contextInfo: provider.contextInfo),
                     ),
                   if (provider.currentChat != null && provider.chats.any((c) => c.id == provider.currentChat!.id))
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight(context),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert_rounded,
-                            color: AppColors.textPrimary(context), size: 20),
-                        color: AppColors.surface(context),
-                        elevation: 8,
-                        offset: const Offset(0, 40),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(
-                            color: AppColors.border(context).withValues(alpha: 0.3),
-                          ),
+                    GestureDetector(
+                      onTap: () => _showChatActionsSheet(context),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceLight(context),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         padding: const EdgeInsets.all(8),
-                        constraints: const BoxConstraints(
-                          minWidth: 40,
-                          minHeight: 40,
-                        ),
-                        onSelected: (value) {
-                          if (value == 'delete') {
-                            _showDeleteConfirmation(context);
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete_outline,
-                                    color: AppColors.error, size: 20),
-                                SizedBox(width: 12),
-                                Text('Delete chat',
-                                    style: TextStyle(color: AppColors.error)),
-                              ],
-                            ),
-                          ),
-                        ],
+                        child: Icon(Icons.more_vert_rounded,
+                            color: AppColors.textPrimary(context), size: 20),
                       ),
                     ),
                 ],
@@ -516,6 +485,43 @@ class _ChatScreenState extends State<ChatScreen> {
             fontWeight: FontWeight.w500,
             height: 1.3,
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showChatActionsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary(context).withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppColors.error),
+              title: const Text('Delete chat',
+                  style: TextStyle(color: AppColors.error)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showDeleteConfirmation(context);
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
         ),
       ),
     );

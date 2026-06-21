@@ -60,8 +60,9 @@ class VfsProvider extends ChangeNotifier {
   Future<void> navigateTo(String path) async {
     _setLoading(true);
     _error = null;
+    _entries = [];
+    _currentPath = path;
     try {
-      _currentPath = path;
       _entries = await _vfs.list(path);
     } on VfsException catch (e) {
       _error = e.message;
