@@ -902,6 +902,8 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
+enum _LoginMethod { oauth, pat }
+
 class _GithubLoginDialog extends StatefulWidget {
   final SettingsProvider settings;
   final ChatProvider chatProvider;
@@ -917,6 +919,8 @@ class _GithubLoginDialog extends StatefulWidget {
 
 class _GithubLoginDialogState extends State<_GithubLoginDialog> {
   final _clientIdController = TextEditingController();
+  final _patController = TextEditingController();
+  _LoginMethod _method = _LoginMethod.oauth;
   bool _isLoggingIn = false;
   String? _userCode;
   String? _verificationUri;
@@ -933,11 +937,12 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
   @override
   void dispose() {
     _clientIdController.dispose();
+    _patController.dispose();
     _pollTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _startLogin() async {
+  Future<void> _startOauthLogin() async {
     final clientId = _clientIdController.text.trim();
     if (clientId.isEmpty) return;
 
@@ -962,6 +967,55 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
 
       _startPolling(deviceFlow.deviceCode, deviceFlow.interval);
     } catch (e) {
+      setState(() {
+        _isLoggingIn = false;
+        _statusMessage = 'Error: $e';
+      });
+    }
+  }
+
+  Future<void> _loginWithPat() async {
+    final pat = _patController.text.trim();
+    if (pat.isEmpty) return;
+
+    setState(() {
+      _isLoggingIn = true;
+      _statusMessage = 'Validating token...';
+    });
+
+    try {
+      final valid = await widget.chatProvider.githubAuth.validateToken(pat);
+      if (!mounted) return;
+
+      if (valid) {
+        final username = widget.chatProvider.githubAuth.username;
+        if (username != null) {
+          await widget.settings.setGithubCredentials(pat, username);
+          widget.chatProvider.initGithub();
+          if (mounted) {
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Connected as @$username'),
+                backgroundColor: AppColors.surface(context),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        } else {
+          setState(() {
+            _isLoggingIn = false;
+            _statusMessage = 'Failed to verify user. Try again.';
+          });
+        }
+      } else {
+        setState(() {
+          _isLoggingIn = false;
+          _statusMessage = 'Invalid token. Check your PAT and try again.';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoggingIn = false;
         _statusMessage = 'Error: $e';
@@ -1056,25 +1110,167 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
             ),
             const SizedBox(height: 16),
 
-            if (!widget.settings.hasGithubClientId && !_isLoggingIn) ...[
+            if (!_isLoggingIn && _userCode == null) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildMethodTab(_LoginMethod.oauth, 'OAuth'),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildMethodTab(_LoginMethod.pat, 'PAT'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (_method == _LoginMethod.oauth) ...[
+              if (!widget.settings.hasGithubClientId && !_isLoggingIn) ...[
+                Text(
+                  'GitHub OAuth App Client ID:',
+                  style: TextStyle(
+                      color: AppColors.textPrimary(context), fontSize: 13,
+                      fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Create one at: github.com/settings/developers',
+                  style: TextStyle(
+                      color: AppColors.primary, fontSize: 11),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _clientIdController,
+                  style: TextStyle(color: AppColors.textPrimary(context)),
+                  decoration: InputDecoration(
+                    hintText: 'Iv1...',
+                    hintStyle: TextStyle(
+                      color: AppColors.textSecondary(context)
+                          .withValues(alpha: 0.4),
+                      fontSize: 14,
+                    ),
+                    filled: true,
+                    fillColor: AppColors.inputBg(context),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              if (!_isLoggingIn && _userCode == null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _startOauthLogin,
+                    icon: const Icon(Icons.login_rounded, size: 18),
+                    label: const Text('Login with GitHub'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              if (_userCode != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Enter this code on GitHub:',
+                        style: TextStyle(
+                          color: AppColors.textSecondary(context),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SelectableText(
+                        _userCode!,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _verificationUri!,
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'After authorizing on GitHub, tap Check:',
+                        style: TextStyle(
+                          color: AppColors.textSecondary(context),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _manualCheck,
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text("I've authorized — Check now"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+
+            if (_method == _LoginMethod.pat && !_isLoggingIn && _userCode == null) ...[
               Text(
-                'GitHub OAuth App Client ID:',
+                'Personal Access Token:',
                 style: TextStyle(
                     color: AppColors.textPrimary(context), fontSize: 13,
                     fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 4),
               Text(
-                'Create one at: github.com/settings/developers',
+                'Create at: github.com/settings/tokens',
                 style: TextStyle(
                     color: AppColors.primary, fontSize: 11),
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: _clientIdController,
+                controller: _patController,
+                obscureText: true,
                 style: TextStyle(color: AppColors.textPrimary(context)),
                 decoration: InputDecoration(
-                  hintText: 'Iv1...',
+                  hintText: 'ghp_...',
                   hintStyle: TextStyle(
                     color: AppColors.textSecondary(context)
                         .withValues(alpha: 0.4),
@@ -1091,15 +1287,12 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
                 ),
               ),
               const SizedBox(height: 16),
-            ],
-
-            if (!_isLoggingIn && _userCode == null) ...[
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _startLogin,
-                  icon: const Icon(Icons.login_rounded, size: 18),
-                  label: const Text('Login with GitHub'),
+                  onPressed: _loginWithPat,
+                  icon: const Icon(Icons.key_rounded, size: 18),
+                  label: const Text('Connect with PAT'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
@@ -1110,73 +1303,14 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
                   ),
                 ),
               ),
-            ],
-
-            if (_userCode != null) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Enter this code on GitHub:',
-                      style: TextStyle(
-                        color: AppColors.textSecondary(context),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SelectableText(
-                      _userCode!,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 4,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _verificationUri!,
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'After authorizing on GitHub, tap Check:',
-                      style: TextStyle(
-                        color: AppColors.textSecondary(context),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _manualCheck,
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: const Text("I've authorized — Check now"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 16),
+              Text(
+                'The token needs repo, workflow, and admin:org scopes '
+                'for full functionality.',
+                style: TextStyle(
+                    color: AppColors.textSecondary(context)
+                        .withValues(alpha: 0.6),
+                    fontSize: 11),
               ),
             ],
 
@@ -1186,6 +1320,7 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
                 _statusMessage!,
                 style: TextStyle(
                   color: _statusMessage!.startsWith('Error')
+                      || _statusMessage!.contains('Invalid')
                       ? AppColors.error
                       : AppColors.textSecondary(context),
                   fontSize: 12,
@@ -1193,7 +1328,7 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
               ),
             ],
 
-            if (!_isLoggingIn && _userCode == null) ...[
+            if (_method == _LoginMethod.oauth && !_isLoggingIn && _userCode == null) ...[
               const SizedBox(height: 16),
               Text(
                 'The AI agent will use your GitHub account to manage repositories, '
@@ -1220,6 +1355,37 @@ class _GithubLoginDialogState extends State<_GithubLoginDialog> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMethodTab(_LoginMethod method, String label) {
+    final isSelected = _method == method;
+    return GestureDetector(
+      onTap: () => setState(() => _method = method),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: 0.4)
+                : AppColors.border(context),
+          ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? AppColors.primary : AppColors.textSecondary(context),
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
