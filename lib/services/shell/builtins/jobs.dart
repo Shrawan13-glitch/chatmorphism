@@ -43,12 +43,6 @@ Future<ShellResult> _cmdBg(ShellContext ctx, List<String> args) async {
         exitCode: 1, stdout: '', stderr: 'bg: $jobId: no such job\n');
   }
   job.status = 'running';
-  unawaited(job.process.exitCode.then((code) {
-    if (ctx.state.jobs.containsKey(jobId)) {
-      ctx.state.jobs[jobId]!.status = 'done';
-      ctx.state.jobs[jobId]!.exitCode = code;
-    }
-  }));
   stdout.write('[${job.id}] $jobId\n');
   return ShellResult.ok;
 }
@@ -71,7 +65,7 @@ Future<ShellResult> _cmdFg(ShellContext ctx, List<String> args) async {
         exitCode: 1, stdout: '', stderr: 'fg: $jobId: no such job\n');
   }
   stdout.write('${job.command}\n');
-  final code = await job.process.exitCode;
+  final code = job.exitCode >= 0 ? job.exitCode : 0;
   ctx.state.jobs.remove(jobId);
   return ShellResult(exitCode: code, stdout: '', stderr: '');
 }
@@ -117,9 +111,11 @@ Future<ShellResult> _cmdKill(ShellContext ctx, List<String> args) async {
 Future<ShellResult> _cmdWait(ShellContext ctx, List<String> args) async {
   if (args.isEmpty) {
     for (final job in ctx.state.jobs.values.toList()) {
-      final code = await job.process.exitCode;
+      if (job.process != null) {
+        final code = await job.process!.exitCode;
+        job.exitCode = code;
+      }
       job.status = 'done';
-      job.exitCode = code;
     }
     return ShellResult.ok;
   }
@@ -127,9 +123,11 @@ Future<ShellResult> _cmdWait(ShellContext ctx, List<String> args) async {
     final jobId = int.tryParse(arg.replaceAll(RegExp(r'[%\[\]]'), ''));
     if (jobId != null && ctx.state.jobs.containsKey(jobId)) {
       final job = ctx.state.jobs[jobId]!;
-      final code = await job.process.exitCode;
+      if (job.process != null) {
+        final code = await job.process!.exitCode;
+        job.exitCode = code;
+      }
       job.status = 'done';
-      job.exitCode = code;
       ctx.state.jobs.remove(jobId);
     }
     final pid = int.tryParse(arg);

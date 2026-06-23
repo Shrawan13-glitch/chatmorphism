@@ -328,7 +328,7 @@ Future<ShellResult> _cmdExec(ShellContext ctx, List<String> args) async {
     }
   }
   if (cmdArgs.isEmpty) return ShellResult.ok;
-  return ctx.fallback.runInShell(cmdArgs.join(' '));
+  return ctx.execute(cmdArgs.join(' '));
 }
 
 // =============================================================================

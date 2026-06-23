@@ -6,14 +6,12 @@ import 'shell_result.dart';
 import 'shell_state.dart';
 import 'shell_expand.dart';
 import 'shell_arithmetic.dart';
-import 'shell_fallback.dart';
 
 /// Context provided to every builtin invocation.
 class ShellContext {
   final ShellState state;
   final ShellExpander expander;
   final ShellArithmetic arithmetic;
-  final ShellFallback fallback;
   final VfsService vfs;
   final ToolExecutionService toolExec;
   final BuiltinRegistry builtins;
@@ -23,7 +21,6 @@ class ShellContext {
     required this.state,
     required this.expander,
     required this.arithmetic,
-    required this.fallback,
     required this.vfs,
     required this.toolExec,
     required this.builtins,

@@ -7,7 +7,6 @@ import 'ast/ast_interpreter.dart';
 import 'shell_arithmetic.dart';
 import 'shell_builtin.dart';
 import 'shell_expand.dart';
-import 'shell_fallback.dart';
 import 'shell_result.dart';
 import 'shell_state.dart';
 
@@ -47,7 +46,6 @@ class ShellEngine {
   final ShellState state;
   late final ShellExpander expander;
   late final ShellArithmetic arithmetic;
-  late final ShellFallback fallback;
   late final BuiltinRegistry builtins;
   final VfsService vfs;
   final ToolExecutionService toolExec;
@@ -62,13 +60,11 @@ class ShellEngine {
   }) {
     expander = ShellExpander(state);
     arithmetic = ShellArithmetic(state);
-    fallback = ShellFallback(state);
     builtins = BuiltinRegistry();
     _context = ShellContext(
       state: state,
       expander: expander,
       arithmetic: arithmetic,
-      fallback: fallback,
       vfs: vfs,
       toolExec: toolExec,
       builtins: builtins,
@@ -111,10 +107,12 @@ class ShellEngine {
           }
         } catch (_) {}
 
-        final result = await fallback.runInShell(input);
-        state.lastExitCode = result.exitCode;
-        state.pipeStatusString = state.lastExitCode.toString();
-        return result;
+        state.lastExitCode = 127;
+        state.pipeStatusString = '127';
+        return ShellResult(
+          exitCode: 127, stdout: '',
+          stderr: 'kino: $trimmed: command not found\n',
+        );
       }
 
       String input = expander.expandAliases(trimmed);
@@ -168,7 +166,11 @@ class ShellEngine {
       return funcResult;
     }
 
-    return fallback.runInShell(words.join(' '));
+    state.lastExitCode = 127;
+    return ShellResult(
+      exitCode: 127, stdout: '',
+      stderr: 'kino: $cmd: command not found\n',
+    );
   }
 
   Future<ShellResult> _executeChain(List<_CompoundSegment> segments) async {
@@ -214,8 +216,18 @@ class ShellEngine {
       return _handleCd(cmd);
     }
 
-    if (_needsRealShell(cmd)) {
-      return fallback.runInShell(cmd);
+    // Handle `time` prefix: strip it and execute the rest
+    if (cmd.trimLeft().startsWith('time ')) {
+      final rest = cmd.trimLeft().substring(5).trim();
+      if (rest.isNotEmpty) {
+        final sw = Stopwatch()..start();
+        final result = await _executeSegment(rest);
+        sw.stop();
+        final elapsed = sw.elapsed;
+        final out = result.stdout;
+        final timeStr = 'real\t${elapsed.inMinutes}m${elapsed.inSeconds % 60}.${elapsed.inMilliseconds % 1000}s\n';
+        return ShellResult(exitCode: result.exitCode, stdout: '$out$timeStr', stderr: result.stderr);
+      }
     }
 
     final parser = ShellParser.tryParse(cmd);
@@ -239,7 +251,11 @@ class ShellEngine {
       return _executeFunction(cmd, firstWord);
     }
 
-    return fallback.runInShell(cmd);
+    state.lastExitCode = 127;
+    return ShellResult(
+      exitCode: 127, stdout: '',
+      stderr: 'kino: $firstWord: command not found\n',
+    );
   }
 
   Future<ShellResult> _executeBuiltin(String cmd) async {
@@ -261,7 +277,6 @@ class ShellEngine {
     }
 
     final cmdName = rawTokens[0];
-    // Retokenize the original cmd to find redirects
     final parsedRedirects = _parseRedirects(cmd, rawTokens);
     if (parsedRedirects != null) {
       return _executeWithRedirects(cmdName, expanded, parsedRedirects);
@@ -450,11 +465,6 @@ class ShellEngine {
     return trimmed.startsWith('cd ') || trimmed == 'cd';
   }
 
-  bool _needsRealShell(String cmd) {
-    final trimmed = cmd.trimLeft();
-    return trimmed.startsWith('time ') || trimmed.startsWith('eval ');
-  }
-
   String? _extractFirstWord(String cmd) {
     final trimmed = cmd.trimLeft();
     if (trimmed.isEmpty) return null;
@@ -507,7 +517,6 @@ class ShellEngine {
         if (current.isNotEmpty) { tokens.add(current.toString()); current.clear(); }
       } else if (c == '>' || c == '<' || c == '&') {
         if (current.isNotEmpty) { tokens.add(current.toString()); current.clear(); }
-        // Skip redirect operators
         if (c == '>' && i + 1 < cmd.length && cmd[i + 1] == '>') { i++; }
         else if (c == '<' && i + 1 < cmd.length && cmd[i + 1] == '<') {
           i++;

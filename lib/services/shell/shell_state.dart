@@ -12,7 +12,7 @@ class BashRematch {
 class Job {
   final int id;
   final String command;
-  final Process process;
+  Process? process;
   String status;
   int exitCode;
 
@@ -29,7 +29,7 @@ class ShellState {
 
   final Map<String, String> env = {
     'HOME': '/',
-    'SHELL': '/bin/sh',
+    'SHELL': '/bin/kino-vfs',
     'USER': 'kino',
     'TERM': 'xterm-256color',
     'PS1': r'\u@\h:\w\$ ',

@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show stdout, stdin, Process, File;
+import 'dart:io' show stdout, stdin, File;
 
 import '../../vfs/vfs_ast.dart';
 import '../shell_builtin.dart';
@@ -76,17 +76,13 @@ class AstInterpreter {
       case BackgroundNode n:
         final cmdStr = _astToString(n.command);
         final jobId = ctx.state.nextJobId++;
-        final proc = await Process.start(
-          '/bin/sh', ['-c', cmdStr],
-          workingDirectory: ctx.state.cwd,
-          environment: Map<String, String>.from(ctx.state.env),
-        );
-        ctx.state.jobs[jobId] = Job(jobId, cmdStr, proc, 'running');
-        ctx.state.lastBgPid = proc.pid;
-        unawaited(proc.exitCode.then((code) {
+        final job = Job(jobId, cmdStr, null, 'running');
+        ctx.state.jobs[jobId] = job;
+        ctx.state.lastBgPid = jobId;
+        unawaited(_executeAstInner(n.command).then((r) {
           if (ctx.state.jobs.containsKey(jobId)) {
             ctx.state.jobs[jobId]!.status = 'done';
-            ctx.state.jobs[jobId]!.exitCode = code;
+            ctx.state.jobs[jobId]!.exitCode = r.exitCode;
           }
         }));
         stdout.write('[$jobId] $jobId\n');
@@ -253,14 +249,8 @@ class AstInterpreter {
         return ShellResult.ok;
 
       case CoprocNode n:
-        final cmdStr = _astToString(n.body);
-        final proc = await Process.start(
-          '/bin/sh', ['-c', cmdStr],
-          workingDirectory: ctx.state.cwd,
-          environment: Map<String, String>.from(ctx.state.env),
-        );
-        ctx.state.env['${n.name}_PID'] = proc.pid.toString();
-        unawaited(proc.exitCode.then((_) {}));
+        unawaited(_executeAstInner(n.body));
+        ctx.state.env['${n.name}_PID'] = '0';
         return ShellResult.ok;
     }
   }
