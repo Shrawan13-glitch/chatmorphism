@@ -23,6 +23,7 @@ import 'settings_provider.dart';
 import '../services/debug_service.dart';
 import '../services/tool_execution.dart';
 import '../services/http_service.dart';
+import '../services/foreground_service.dart';
 
 class ChatProvider extends ChangeNotifier {
   final SettingsProvider _settingsProvider;
@@ -199,6 +200,7 @@ class ChatProvider extends ChangeNotifier {
 
   void cancelGeneration() {
     _genManager.cancel();
+    ForegroundService.stop();
   }
 
   Future<void> sendMessage(String content) async {
@@ -282,6 +284,8 @@ class ChatProvider extends ChangeNotifier {
     _reasoningBuffer = StringBuffer();
     notifyListeners();
 
+    await ForegroundService.start();
+
     final aiMessage = Message(
       id: _uuid.v4(),
       chatId: chatId,
@@ -350,6 +354,7 @@ class ChatProvider extends ChangeNotifier {
           _isGenerating = false;
           _activeAiMessage = null;
           notifyListeners();
+          await ForegroundService.stop();
           DebugService.instance.info('_generateResponse: completed');
         },
         onError: (e) async {
@@ -360,6 +365,7 @@ class ChatProvider extends ChangeNotifier {
           await _insertErrorMessage(chatId, 'Error: $e');
           _isGenerating = false;
           notifyListeners();
+          await ForegroundService.stop();
         },
       );
     } catch (e, s) {
@@ -370,6 +376,7 @@ class ChatProvider extends ChangeNotifier {
       await _insertErrorMessage(chatId, 'Connection error: $e');
       _isGenerating = false;
       notifyListeners();
+      await ForegroundService.stop();
     }
   }
 
