@@ -311,17 +311,17 @@ class ShellArithmetic {
   }
 
   int _parseMul() {
-    var left = _parsePower();
+    var left = _parseUnary();
     while (true) {
       if (_match('*')) {
-        final r = _parsePower();
+        final r = _parseUnary();
         left = left * r;
       } else if (_match('/')) {
-        final r = _parsePower();
+        final r = _parseUnary();
         if (r == 0) throw Exception('division by zero');
         left = left ~/ r;
       } else if (_match('%')) {
-        final r = _parsePower();
+        final r = _parseUnary();
         if (r == 0) throw Exception('division by zero');
         left = left % r;
       } else {
@@ -331,8 +331,34 @@ class ShellArithmetic {
     return left;
   }
 
+  int _parseUnary() {
+    if (_match('+')) return _parsePower();
+    if (_match('-')) return -_parsePower();
+    if (_match('!')) return _parsePower() == 0 ? 1 : 0;
+    if (_match('~')) return ~_parsePower();
+    if (_match('++')) {
+      final token = _advance();
+      if (token.type == _ArithTokType.var_) {
+        final val = state.getArithVar(token.value) + 1;
+        state.setArithVar(token.value, val);
+        return val;
+      }
+      return _parsePower();
+    }
+    if (_match('--')) {
+      final token = _advance();
+      if (token.type == _ArithTokType.var_) {
+        final val = state.getArithVar(token.value) - 1;
+        state.setArithVar(token.value, val);
+        return val;
+      }
+      return _parsePower();
+    }
+    return _parsePower();
+  }
+
   int _parsePower() {
-    var left = _parseUnary();
+    var left = _parsePostfix();
     if (_match('**')) {
       final right = _parsePower();
       return _intPow(left, right);
@@ -351,32 +377,6 @@ class ShellArithmetic {
       b *= b;
     }
     return result;
-  }
-
-  int _parseUnary() {
-    if (_match('+')) return _parsePostfix();
-    if (_match('-')) return -_parsePostfix();
-    if (_match('!')) return _parsePostfix() == 0 ? 1 : 0;
-    if (_match('~')) return ~_parsePostfix();
-    if (_match('++')) {
-      final token = _advance();
-      if (token.type == _ArithTokType.var_) {
-        final val = state.getArithVar(token.value) + 1;
-        state.setArithVar(token.value, val);
-        return val;
-      }
-      return _parsePostfix();
-    }
-    if (_match('--')) {
-      final token = _advance();
-      if (token.type == _ArithTokType.var_) {
-        final val = state.getArithVar(token.value) - 1;
-        state.setArithVar(token.value, val);
-        return val;
-      }
-      return _parsePostfix();
-    }
-    return _parsePostfix();
   }
 
   int _parsePostfix() {

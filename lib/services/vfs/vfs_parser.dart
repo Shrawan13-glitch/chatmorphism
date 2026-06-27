@@ -316,9 +316,27 @@ class ShellParser {
   AstNode _parseList() {
     var left = _parseAndOr();
 
-    while (_match(TokKind.semicolon) || _match(TokKind.doubleSemicolon) || _match(TokKind.background)) {
-      if (_isEof || _current.kind == TokKind.rightParen || _current.kind == TokKind.rightBrace) break;
-      if (_current.kind == TokKind.word && (_current.value == 'then' || _current.value == 'else' || _current.value == 'elif' || _current.value == 'fi' || _current.value == 'do' || _current.value == 'done' || _current.value == 'esac')) break;
+    while (true) {
+      final isBg = _current.kind == TokKind.background;
+      final isSep = _current.kind == TokKind.semicolon ||
+          _current.kind == TokKind.doubleSemicolon;
+      if (!isBg && !isSep) break;
+
+      if (isBg) {
+        _advance();
+        left = BackgroundNode(left);
+      } else {
+        _advance();
+      }
+
+      if (_isEof || _current.kind == TokKind.rightParen ||
+          _current.kind == TokKind.rightBrace) { break; }
+      if (_current.kind == TokKind.word &&
+          (_current.value == 'then' || _current.value == 'else' ||
+           _current.value == 'elif' || _current.value == 'fi' ||
+           _current.value == 'do' || _current.value == 'done' ||
+           _current.value == 'esac')) { break; }
+
       final right = _parseAndOr();
       left = SeqNode([left, right]);
     }
@@ -517,11 +535,19 @@ class ShellParser {
       }
     }
 
+    final env = Map<String, String>.from(_envPrefixes);
+    _envPrefixes.clear();
+
     if (words.isEmpty && redirects.isNotEmpty) {
-      return SimpleCmdNode(words: [], redirects: redirects);
+      return SimpleCmdNode(words: [], redirects: redirects, env: env);
     }
 
-    return SimpleCmdNode(words: words, redirects: redirects, background: background);
+    return SimpleCmdNode(
+      words: words,
+      redirects: redirects,
+      background: background,
+      env: env,
+    );
   }
 
   // =========================================================================
@@ -964,7 +990,11 @@ class ShellParser {
     } else if (_current.kind == TokKind.word && (_current.value == 'if' || _current.value == 'for' || _current.value == 'while' || _current.value == 'until' || _current.value == 'case')) {
       body = _parseCommand()!;
     } else {
-      body = _parseSimpleCommand()!;
+      final parsed = _parseSimpleCommand();
+      if (parsed == null) {
+        throw Exception('syntax error: expected function body after "$name"');
+      }
+      body = parsed;
     }
 
     return FunctionDefNode(name, body);

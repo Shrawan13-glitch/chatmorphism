@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../vfs/vfs_service.dart';
+import 'shell_arithmetic.dart';
 import 'shell_state.dart';
 
 class ShellExpander {
@@ -136,19 +137,13 @@ class ShellExpander {
   }
 
   String _evalArithmetic(String expr) {
-    // Delegate to a simple evaluator; full arithmetic is in ShellArithmetic
     try {
       final trimmed = expr.trim();
       if (trimmed.isEmpty) return '0';
-      // Simple case: just a number or a variable
-      final parsed = int.tryParse(trimmed);
-      if (parsed != null) return parsed.toString();
-      final varVal = state.lookupVar(trimmed);
-      if (varVal.isNotEmpty) {
-        final v = int.tryParse(varVal);
-        if (v != null) return v.toString();
-      }
-      return '0';
+      // Use ShellArithmetic for full expression evaluation
+      final arith = ShellArithmetic(state);
+      final result = arith.eval(trimmed);
+      return result.toString();
     } catch (_) {
       return '0';
     }
@@ -449,7 +444,7 @@ class ShellExpander {
       } else if (c == '.') {
         buf.write(r'\.');
       } else {
-        buf.write(c);
+        buf.write(RegExp.escape(c));
       }
     }
     return buf.toString();

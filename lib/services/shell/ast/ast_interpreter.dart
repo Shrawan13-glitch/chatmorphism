@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert' show utf8, LineSplitter;
 import 'dart:io' show stdout, stdin, File;
 
 import '../../vfs/vfs_ast.dart';
@@ -55,23 +56,32 @@ class AstInterpreter {
       case PipelineNode n:
         if (n.commands.isEmpty) return ShellResult.ok;
         if (n.commands.length == 1) {
-          return _executeAstInner(n.commands.first);
+          final result = await _executeAstInner(n.commands.first);
+          ctx.state.pipeStatus = [result.exitCode];
+          return result;
         }
-        final cmdStrs = <String>[];
+        // Track exit codes for PIPESTATUS
+        final exitCodes = <int>[];
+        var combinedStdout = '';
+        var combinedStderr = '';
         for (final cmd in n.commands) {
-          if (cmd is SimpleCmdNode) {
-            cmdStrs.add(cmd.words.join(' '));
-          } else {
-            return executeString(
-              n.commands.map((c) => _astToString(c)).join(' | '),
+          final result = await _executeAstInner(cmd);
+          exitCodes.add(result.exitCode);
+          combinedStdout += result.stdout;
+          combinedStderr += result.stderr;
+        }
+        ctx.state.pipeStatus = List<int>.from(exitCodes);
+        if (ctx.state.shopt['pipefail'] == true) {
+          final failed = exitCodes.firstWhere((c) => c != 0, orElse: () => 0);
+          if (failed != 0) {
+            return ShellResult(
+              exitCode: failed, stdout: combinedStdout, stderr: combinedStderr,
             );
           }
         }
-        final result = await executeString(cmdStrs.join(' | '));
-        if (ctx.state.shopt['pipefail'] == true && result.exitCode != 0) {
-          return result;
-        }
-        return result;
+        return ShellResult(
+          exitCode: exitCodes.last, stdout: combinedStdout, stderr: combinedStderr,
+        );
 
       case BackgroundNode n:
         final cmdStr = _astToString(n.command);
@@ -84,9 +94,15 @@ class AstInterpreter {
             ctx.state.jobs[jobId]!.status = 'done';
             ctx.state.jobs[jobId]!.exitCode = r.exitCode;
           }
+        }).catchError((_) {
+          if (ctx.state.jobs.containsKey(jobId)) {
+            ctx.state.jobs[jobId]!.status = 'failed';
+            ctx.state.jobs[jobId]!.exitCode = 1;
+          }
         }));
-        stdout.write('[$jobId] $jobId\n');
-        return ShellResult.ok;
+        return ShellResult(
+          exitCode: 0, stdout: '[$jobId] $jobId\n', stderr: '',
+        );
 
       case SimpleCmdNode n:
         if (n.words.isEmpty) {
@@ -95,7 +111,7 @@ class AstInterpreter {
           }
           return ShellResult.ok;
         }
-        return _executePreTokenized(n.words);
+        return _executePreTokenized(n.words, env: n.env, redirects: n.redirects);
 
       case IfNode n:
         final condResult = await _executeAstInner(n.condition);
@@ -231,7 +247,7 @@ class AstInterpreter {
             stdout.write('${idx + 1}) ${items[idx]}\n');
           }
           stdout.write('#? ');
-          final line = stdin.readLineSync();
+          final line = await _readLineAsync();
           if (line == null) break;
           if (line.isEmpty) continue;
           final choice = int.tryParse(line);
@@ -255,7 +271,17 @@ class AstInterpreter {
     }
   }
 
-  Future<ShellResult> _executePreTokenized(List<String> words) async {
+  Future<ShellResult> _executePreTokenized(List<String> words,
+      {Map<String, String> env = const {}, List<RedirectNode> redirects = const []}) async {
+    // Apply environment prefix assignments (FOO=bar cmd)
+    final savedEnv = <String, String?>{};
+    if (env.isNotEmpty) {
+      for (final entry in env.entries) {
+        savedEnv[entry.key] = ctx.state.env[entry.key];
+        ctx.state.env[entry.key] = entry.value;
+      }
+    }
+
     final expanded = <String>[];
     for (var i = 0; i < words.length; i++) {
       var w = words[i];
@@ -264,7 +290,10 @@ class AstInterpreter {
       expanded.add(w);
     }
 
-    if (expanded.isEmpty) return ShellResult.ok;
+    if (expanded.isEmpty) {
+      if (env.isNotEmpty) _restoreEnv(savedEnv);
+      return ShellResult.ok;
+    }
     final cmd = expanded[0];
     final args = expanded.sublist(1);
 
@@ -278,30 +307,59 @@ class AstInterpreter {
     }
     ctx.state.underscore = finalArgs.isNotEmpty ? finalArgs.last : cmd;
 
+    ShellResult result;
     if (ctx.builtins.containsKey(cmd)) {
-      return ctx.builtins.call(cmd, ctx, finalArgs);
-    }
-
-    if (ctx.state.functions.containsKey(cmd)) {
+      result = await ctx.builtins.call(cmd, ctx, finalArgs);
+    } else if (ctx.state.functions.containsKey(cmd)) {
       final ast = ctx.state.functions[cmd]!;
       final savedParams = List<String>.from(ctx.state.positionalParams);
       ctx.state.positionalParams = finalArgs;
       ctx.state.env['@'] = finalArgs.join(' ');
       ctx.state.env['#'] = ctx.state.positionalParams.length.toString();
-      final funcResult = await _executeAstInner(ast);
+      result = await _executeAstInner(ast);
       ctx.state.returnFromFunction = false;
       ctx.state.positionalParams = savedParams;
       ctx.state.env['@'] = savedParams.join(' ');
       ctx.state.env['#'] = savedParams.length.toString();
-      return funcResult;
+    } else {
+      try {
+        final toolResult = await ctx.toolExec.runTool(cmd, finalArgs);
+        result = ShellResult(
+          exitCode: toolResult.exitCode,
+          stdout: toolResult.stdout,
+          stderr: toolResult.stderr,
+        );
+      } catch (_) {
+        result = ShellResult(
+          exitCode: 127, stdout: '',
+          stderr: 'kino: $cmd: command not found\n',
+        );
+      }
     }
 
-    return executeString(expanded.join(' '));
+    if (redirects.isNotEmpty) {
+      result = await _applyRedirects(result, redirects);
+    }
+
+    if (env.isNotEmpty) _restoreEnv(savedEnv);
+    return result;
   }
 
-  Future<ShellResult> _executeRedirectsOnly(List<RedirectNode> redirects) async {
-    var stdout = '';
-    var stderr = '';
+  void _restoreEnv(Map<String, String?> saved) {
+    for (final entry in saved.entries) {
+      if (entry.value == null) {
+        ctx.state.env.remove(entry.key);
+      } else {
+        ctx.state.env[entry.key] = entry.value!;
+      }
+    }
+  }
+
+  Future<ShellResult> _applyRedirects(
+    ShellResult result, List<RedirectNode> redirects,
+  ) async {
+    var stdout = result.stdout;
+    var stderr = result.stderr;
     for (final r in redirects) {
       final target = ctx.expander.resolvePath(r.target);
       final abs = ctx.vfsAbsolute(target);
@@ -312,16 +370,21 @@ class AstInterpreter {
         stderr = '';
       } else if (r.isOutput) {
         if (r.isAppend) {
-          final existing = _existingContent(abs);
-          stdout = existing.isNotEmpty ? '$existing\n$stdout' : stdout;
+          final existing = await _existingContent(abs);
+          await ctx.vfs.writeFile(target, '$existing\n$stdout');
+        } else {
+          await ctx.vfs.writeFile(target, stdout);
         }
-        await ctx.vfs.writeFile(target, stdout);
         stdout = '';
       } else if (r.isInput && r.isHereStr) {
         stdout = r.target;
       }
     }
-    return ShellResult(exitCode: 0, stdout: stdout, stderr: stderr);
+    return ShellResult(exitCode: result.exitCode, stdout: stdout, stderr: stderr);
+  }
+
+  Future<ShellResult> _executeRedirectsOnly(List<RedirectNode> redirects) async {
+    return _applyRedirects(ShellResult.ok, redirects);
   }
 
   bool _matchCasePattern(String word, String pattern) {
@@ -347,7 +410,7 @@ class AstInterpreter {
       } else if (c == '?') {
         buf.write('.');
       } else if (c == '.') {
-        buf.write('\\.');
+        buf.write(r'\.');
       } else if (c == '[') {
         buf.write('[');
         i++;
@@ -379,12 +442,34 @@ class AstInterpreter {
     return buf.toString();
   }
 
-  String _existingContent(String abs) {
+  Future<String> _existingContent(String abs) async {
     try {
-      return File(abs).readAsStringSync();
+      return await File(abs).readAsString();
     } catch (_) {
       return '';
     }
+  }
+
+  Future<String?> _readLineAsync() async {
+    final completer = Completer<String?>();
+    String? line;
+    final subscription = stdin.transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+      (data) {
+        if (!completer.isCompleted) {
+          line = data;
+          completer.complete(data);
+        }
+      },
+      onDone: () {
+        if (!completer.isCompleted) completer.complete(null);
+      },
+      cancelOnError: true,
+    );
+    line = await completer.future;
+    await subscription.cancel();
+    return line;
   }
 
   String _astToString(AstNode node) {
@@ -399,6 +484,15 @@ class AstInterpreter {
         for (var i = 0; i < n.words.length; i++) {
           if (i > 0) buf.write(' ');
           buf.write(n.words[i]);
+        }
+        for (final r in n.redirects) {
+          buf.write(' ${r.op}');
+          if (r.isHereDoc || r.isHereStr) {
+            buf.write(r.target);
+          } else {
+            buf.write(' ');
+            buf.write(r.target);
+          }
         }
       case ProgramNode n:
         for (var i = 0; i < n.statements.length; i++) {

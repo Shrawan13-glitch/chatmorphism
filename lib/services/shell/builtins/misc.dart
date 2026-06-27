@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert' show utf8, LineSplitter;
 import 'dart:io' show stdout, stderr, stdin, File;
 import 'package:path/path.dart' as p;
 import '../shell_builtin.dart';
@@ -118,8 +120,8 @@ Future<ShellResult> _cmdShopt(ShellContext ctx, List<String> args) async {
   var unsetFlag = false;
   var i = 0;
 
-  if (args[i] == '-s') { setFlag = true; i++; }
-  if (args[i] == '-u') { unsetFlag = true; i++; }
+  if (i < args.length && args[i] == '-s') { setFlag = true; i++; }
+  if (i < args.length && args[i] == '-u') { unsetFlag = true; i++; }
 
   if (setFlag || unsetFlag) {
     for (; i < args.length; i++) {
@@ -479,28 +481,53 @@ Future<ShellResult> _cmdCompgen(ShellContext ctx, List<String> args) async {
   if (args.isEmpty) {
     return ShellResult(exitCode: 0, stdout: '', stderr: '');
   }
-  if (args.length >= 2) {
-    if (args[0] == '-W' && args[1].isNotEmpty) {
-      return ShellResult(
-          exitCode: 0, stdout: '${args[1]}\n', stderr: '');
+  final prefix = args.length >= 2 ? args[1] : '';
+  if (args[0] == '-W' && prefix.isNotEmpty) {
+    return ShellResult(exitCode: 0, stdout: '$prefix\n', stderr: '');
+  }
+  if (args[0] == '-c') {
+    if (ctx.builtins.containsKey(prefix)) {
+      return ShellResult(exitCode: 0, stdout: '$prefix\n', stderr: '');
     }
-    if (args[0] == '-c') {
-      final cmd = args[1];
-      if (ctx.builtins.containsKey(cmd)) {
-        return ShellResult(
-            exitCode: 0, stdout: '$cmd\n', stderr: '');
+    final found = _findInPath(ctx, prefix);
+    if (found != null) {
+      return ShellResult(exitCode: 0, stdout: '$found\n', stderr: '');
+    }
+  }
+  if (args[0] == '-a' || args[0] == '-b') {
+    final buf = StringBuffer();
+    for (final name in ctx.builtins.names) {
+      if (name.startsWith(prefix)) {
+        buf.writeln(name);
       }
     }
-    if (args[0] == '-a' || args[0] == '-b') {
-      final buf = StringBuffer();
-      for (final name in ctx.builtins.names) {
-        if (name.startsWith(args[1])) {
-          buf.writeln(name);
+    return ShellResult(exitCode: 0, stdout: buf.toString(), stderr: '');
+  }
+  if (args[0] == '-A' && args.length >= 2) {
+    final buf = StringBuffer();
+    switch (args[1]) {
+      case 'alias':
+        for (final name in ctx.state.aliases.keys) {
+          if (name.startsWith(prefix)) buf.writeln(name);
         }
-      }
-      return ShellResult(
-          exitCode: 0, stdout: buf.toString(), stderr: '');
+      case 'function':
+        for (final name in ctx.state.functions.keys) {
+          if (name.startsWith(prefix)) buf.writeln(name);
+        }
+      case 'variable':
+        for (final name in ctx.state.env.keys) {
+          if (name.startsWith(prefix)) buf.writeln(name);
+        }
+      case 'array':
+        for (final name in ctx.state.arrays.keys) {
+          if (name.startsWith(prefix)) buf.writeln(name);
+        }
+      case 'builtin':
+        for (final name in ctx.builtins.names) {
+          if (name.startsWith(prefix)) buf.writeln(name);
+        }
     }
+    return ShellResult(exitCode: 0, stdout: buf.toString(), stderr: '');
   }
   return ShellResult(exitCode: 0, stdout: '', stderr: '');
 }
@@ -567,7 +594,7 @@ Future<ShellResult> _cmdSelect(ShellContext ctx, List<String> args) async {
     stderr.writeln('$i) ${words[i]}');
   }
   stderr.write('#? ');
-  final line = stdin.readLineSync() ?? '';
+  final line = await _readLineAsync() ?? '';
   if (line.isNotEmpty) {
     final idx = int.tryParse(line);
     if (idx != null && idx >= 0 && idx < words.length) {
@@ -575,6 +602,28 @@ Future<ShellResult> _cmdSelect(ShellContext ctx, List<String> args) async {
     }
   }
   return ShellResult.ok;
+}
+
+Future<String?> _readLineAsync() async {
+  final completer = Completer<String?>();
+  String? line;
+  final subscription = stdin.transform(utf8.decoder)
+      .transform(const LineSplitter())
+      .listen(
+    (data) {
+      if (!completer.isCompleted) {
+        line = data;
+        completer.complete(data);
+      }
+    },
+    onDone: () {
+      if (!completer.isCompleted) completer.complete(null);
+    },
+    cancelOnError: true,
+  );
+  line = await completer.future;
+  await subscription.cancel();
+  return line;
 }
 
 // =============================================================================

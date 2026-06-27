@@ -130,12 +130,6 @@ Future<ShellResult> _cmdWait(ShellContext ctx, List<String> args) async {
       job.status = 'done';
       ctx.state.jobs.remove(jobId);
     }
-    final pid = int.tryParse(arg);
-    if (pid != null) {
-      try {
-        Process.killPid(pid);
-      } catch (_) {}
-    }
   }
   return ShellResult.ok;
 }

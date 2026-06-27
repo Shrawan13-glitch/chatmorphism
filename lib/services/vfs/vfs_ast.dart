@@ -48,10 +48,12 @@ class SimpleCmdNode extends AstNode {
   final List<String> words;
   final List<RedirectNode> redirects;
   final bool background;
+  final Map<String, String> env;
   SimpleCmdNode({
     required this.words,
     this.redirects = const [],
     this.background = false,
+    this.env = const {},
   });
 }
 

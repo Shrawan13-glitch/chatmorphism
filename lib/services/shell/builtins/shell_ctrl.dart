@@ -98,8 +98,9 @@ Future<ShellResult> _cmdExport(ShellContext ctx, List<String> args) async {
       final eq = arg.indexOf('=');
       final name = arg.substring(0, eq);
       var value = arg.substring(eq + 1);
-      if ((value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))) {
+      while (value.length >= 2 &&
+          ((value.startsWith('"') && value.endsWith('"')) ||
+           (value.startsWith("'") && value.endsWith("'")))) {
         value = value.substring(1, value.length - 1);
       }
       ctx.state.env[name] = value;
@@ -116,6 +117,8 @@ Future<ShellResult> _cmdExport(ShellContext ctx, List<String> args) async {
 Future<ShellResult> _cmdUnset(ShellContext ctx, List<String> args) async {
   for (final arg in args) {
     ctx.state.env.remove(arg);
+    ctx.state.arrays.remove(arg);
+    ctx.state.assocArrays.remove(arg);
   }
   return ShellResult.ok;
 }
@@ -305,27 +308,24 @@ Future<ShellResult> _cmdExec(ShellContext ctx, List<String> args) async {
   }
   final cmdArgs = <String>[];
   for (var i = 0; i < args.length; i++) {
-    if (args[i] == '>' && i + 1 < args.length) {
+    final redirectOps = {'>', '>>', '>&', '>|', '<', '<<', '<<<', '<>', '<&', '&>', '&>>'};
+    if (redirectOps.contains(args[i]) && i + 1 < args.length) {
       i++;
       continue;
-    } else if (args[i] == '>>' && i + 1 < args.length) {
-      i++;
-      continue;
-    } else if (args[i] == '2>' && i + 1 < args.length) {
-      i++;
-      continue;
-    } else if (args[i] == '&>' && i + 1 < args.length) {
-      i++;
-      continue;
-    } else if (args[i] == '<' && i + 1 < args.length) {
-      i++;
-      continue;
-    } else if (RegExp(r'^\d+>').hasMatch(args[i]) && i + 1 < args.length) {
-      i++;
-      continue;
-    } else {
-      cmdArgs.add(args[i]);
     }
+    if (args[i] == '2>' && i + 1 < args.length) {
+      i++;
+      continue;
+    }
+    if (RegExp(r'^\d+>').hasMatch(args[i]) && i + 1 < args.length) {
+      i++;
+      continue;
+    }
+    if (RegExp(r'^\d+>>').hasMatch(args[i]) && i + 1 < args.length) {
+      i++;
+      continue;
+    }
+    cmdArgs.add(args[i]);
   }
   if (cmdArgs.isEmpty) return ShellResult.ok;
   return ctx.execute(cmdArgs.join(' '));
@@ -358,6 +358,9 @@ Future<ShellResult> _cmdLet(ShellContext ctx, List<String> args) async {
       final expr = arg.substring(eq + 1);
       final value = ctx.arithmetic.eval(expr);
       ctx.state.env[name] = value.toString();
+    } else {
+      // Bare expression without assignment (e.g., let x++, let a > b)
+      ctx.arithmetic.eval(arg);
     }
   }
   return ShellResult.ok;

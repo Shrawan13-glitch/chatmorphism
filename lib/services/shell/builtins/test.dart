@@ -70,6 +70,7 @@ Future<ShellResult> _cmdTest(ShellContext ctx, List<String> args) async {
     if (args.length < 2) return _false;
     final target = ctx.expander.resolvePath(args[1]);
     final abs = ctx.vfsAbsolute(target);
+    if (FileSystemEntity.typeSync(abs) == FileSystemEntityType.notFound) return _false;
     final stat = File(abs).statSync();
     return (stat.mode & 0x100) != 0 ? _true : _false;
   }
@@ -78,6 +79,7 @@ Future<ShellResult> _cmdTest(ShellContext ctx, List<String> args) async {
     if (args.length < 2) return _false;
     final target = ctx.expander.resolvePath(args[1]);
     final abs = ctx.vfsAbsolute(target);
+    if (FileSystemEntity.typeSync(abs) == FileSystemEntityType.notFound) return _false;
     final stat = File(abs).statSync();
     return (stat.mode & 0x80) != 0 ? _true : _false;
   }
@@ -86,6 +88,7 @@ Future<ShellResult> _cmdTest(ShellContext ctx, List<String> args) async {
     if (args.length < 2) return _false;
     final target = ctx.expander.resolvePath(args[1]);
     final abs = ctx.vfsAbsolute(target);
+    if (FileSystemEntity.typeSync(abs) == FileSystemEntityType.notFound) return _false;
     final stat = File(abs).statSync();
     return (stat.mode & 0x40) != 0 ? _true : _false;
   }
@@ -209,27 +212,70 @@ Future<ShellResult> _evalBracketExpr(
       }
       if (depth > 0) end++;
     }
-    final innerResult = await _evalBracketExpr(ctx, args, start + 1);
-    var result = innerResult.exitCode == 0;
+    var result = await _evalBracketExpr(ctx, args, start + 1);
     var i = end + 1;
     while (i < args.length) {
       if (args[i] == '&&') {
         i++;
         final right = await _evalBracketExpr(ctx, args, i);
-        result = result && right.exitCode == 0;
+        result = ShellResult(
+          exitCode: (result.exitCode == 0 && right.exitCode == 0) ? 0 : 1,
+          stdout: '', stderr: '',
+        );
         break;
       } else if (args[i] == '||') {
         i++;
         final right = await _evalBracketExpr(ctx, args, i);
-        result = result || right.exitCode == 0;
+        result = ShellResult(
+          exitCode: (result.exitCode == 0 || right.exitCode == 0) ? 0 : 1,
+          stdout: '', stderr: '',
+        );
         break;
       }
       break;
     }
-    return ShellResult(exitCode: result ? 0 : 1, stdout: '', stderr: '');
+    return result;
   }
-  final result = await _cmdTest(ctx, args.sublist(start));
+  // Handle &&/|| at top level (non-parenthesized)
+  var result = await _cmdTest(ctx, args.sublist(start));
+  var i = start + _countTestArgs(ctx, args, start);
+  while (i < args.length) {
+    if (args[i] == '&&') {
+      i++;
+      final right = await _cmdTest(ctx, args.sublist(i));
+      result = ShellResult(
+        exitCode: (result.exitCode == 0 && right.exitCode == 0) ? 0 : 1,
+        stdout: '', stderr: '',
+      );
+      i += _countTestArgs(ctx, args, i);
+    } else if (args[i] == '||') {
+      i++;
+      final right = await _cmdTest(ctx, args.sublist(i));
+      result = ShellResult(
+        exitCode: (result.exitCode == 0 || right.exitCode == 0) ? 0 : 1,
+        stdout: '', stderr: '',
+      );
+      i += _countTestArgs(ctx, args, i);
+    } else {
+      break;
+    }
+  }
   return result;
+}
+
+int _countTestArgs(ShellContext ctx, List<String> args, int start) {
+  // Returns how many args from [start] form a single test expression
+  if (start >= args.length) return 0;
+  if (args[start] == '(' || args[start] == ')') return 1;
+  // Binary ops consume 3 tokens: <op> <arg1> <arg2>
+  const unaryOps = {'!', '-n', '-z', '-d', '-f', '-e', '-s', '-r', '-w', '-x',
+    '-nt', '-ot', '-ef'};
+  if (start + 2 < args.length) {
+    const binaryOps = {'=', '!=', '<', '>', '-eq', '-ne', '-lt', '-le', '-gt', '-ge'};
+    if (binaryOps.contains(args[start + 1])) return 3;
+  }
+  if (unaryOps.contains(args[start]) && start + 1 < args.length) return 2;
+  return 1;
 }
 
 const _true = ShellResult(exitCode: 0, stdout: '', stderr: '');

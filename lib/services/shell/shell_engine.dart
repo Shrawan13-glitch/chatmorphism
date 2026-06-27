@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show File;
+import 'dart:io' show File, FileSystemEntity, FileSystemEntityType;
 import '../vfs/vfs_parser.dart';
 import '../vfs/vfs_service.dart';
 import '../tool_execution.dart';
@@ -18,7 +18,7 @@ class _CompoundSegment {
   _CompoundSegment(this.command, [this.separator]);
 }
 
-enum RedirectKind { output, error, outputBoth, fdMerge }
+enum RedirectKind { output, error, outputBoth, fdMerge, input }
 
 class RedirectInfo {
   final int srcFd;
@@ -39,7 +39,8 @@ class RedirectInfo {
 class ParsedRedirects {
   final String cmd;
   final List<RedirectInfo> redirects;
-  ParsedRedirects(this.cmd, this.redirects);
+  final List<String> baseTokenList;
+  ParsedRedirects(this.cmd, this.redirects, this.baseTokenList);
 }
 
 class ShellEngine {
@@ -78,7 +79,13 @@ class ShellEngine {
   }
 
   Future<ShellResult> execute(String command) async {
-    final trimmed = command.trim();
+    var trimmed = command.trim();
+    if (trimmed.isEmpty) {
+      return ShellResult.ok;
+    }
+
+    // Strip inline comments (#) that are not inside quotes
+    trimmed = _stripInlineComments(trimmed).trim();
     if (trimmed.isEmpty) {
       return ShellResult.ok;
     }
@@ -101,14 +108,13 @@ class ShellEngine {
             final ast = parser.parse();
             final result = await _interpreter.interpret(ast);
             state.lastExitCode = result.exitCode;
-            state.pipeStatusString = state.lastExitCode.toString();
-            if (state.exitRequested) state.exitRequested = false;
+            state.pipeStatus = [state.lastExitCode];
             return result;
           }
         } catch (_) {}
 
         state.lastExitCode = 127;
-        state.pipeStatusString = '127';
+        state.pipeStatus = [127];
         return ShellResult(
           exitCode: 127, stdout: '',
           stderr: 'kino: $trimmed: command not found\n',
@@ -118,7 +124,7 @@ class ShellEngine {
       String input = expander.expandAliases(trimmed);
       final segments = _splitCompound(input);
       final result = await _executeChain(segments);
-      state.pipeStatusString = state.lastExitCode.toString();
+      state.pipeStatus = [state.lastExitCode];
       if (state.lastError.isNotEmpty) {
         return ShellResult(
           exitCode: result.exitCode,
@@ -264,9 +270,16 @@ class ShellEngine {
       return ShellResult.ok;
     }
 
+    final cmdName = rawTokens[0];
+    final parsedRedirects = _parseRedirects(cmd, rawTokens);
+
+    // Use redirect-free tokens as arg source
+    final argTokens = parsedRedirects != null
+        ? parsedRedirects.baseTokenList.sublist(1)
+        : rawTokens.sublist(1);
+
     final expanded = <String>[];
-    for (var i = 1; i < rawTokens.length; i++) {
-      final token = rawTokens[i];
+    for (final token in argTokens) {
       for (final braced in expander.expandBraces(token)) {
         var t = braced;
         t = expander.expandVars(t);
@@ -276,8 +289,6 @@ class ShellEngine {
       }
     }
 
-    final cmdName = rawTokens[0];
-    final parsedRedirects = _parseRedirects(cmd, rawTokens);
     if (parsedRedirects != null) {
       return _executeWithRedirects(cmdName, expanded, parsedRedirects);
     }
@@ -314,7 +325,8 @@ class ShellEngine {
       if (r.kind == RedirectKind.outputBoth) {
         final content = '${stdout.trim()}\n${stderr.trim()}'.trim();
         if (r.isAppend) {
-          await vfs.writeFile(target, '${_existingContent(abs)}\n$content');
+          final existing = await _existingContent(abs);
+          await vfs.writeFile(target, '$existing\n$content');
         } else {
           await vfs.writeFile(target, content);
         }
@@ -322,22 +334,22 @@ class ShellEngine {
         stderr = '';
       } else if (r.kind == RedirectKind.output) {
         if (r.isAppend) {
-          await vfs.writeFile(
-            target, '${_existingContent(abs)}\n$stdout',
-          );
+          final existing = await _existingContent(abs);
+          await vfs.writeFile(target, '$existing\n$stdout');
         } else {
           await vfs.writeFile(target, stdout);
         }
         stdout = '';
       } else if (r.kind == RedirectKind.error) {
         if (r.isAppend) {
-          await vfs.writeFile(
-            target, '${_existingContent(abs)}\n$stderr',
-          );
+          final existing = await _existingContent(abs);
+          await vfs.writeFile(target, '$existing\n$stderr');
         } else {
           await vfs.writeFile(target, stderr);
         }
         stderr = '';
+      } else if (r.kind == RedirectKind.input) {
+        // Input redirects are no-ops for builtins (they don't read stdin)
       }
     }
 
@@ -423,6 +435,20 @@ class ShellEngine {
     }
 
     final resolved = expander.resolvePath(target);
+    final abs = _context.vfsAbsolute(resolved);
+    final type = FileSystemEntity.typeSync(abs);
+    if (type == FileSystemEntityType.notFound) {
+      return ShellResult(
+        exitCode: 1, stdout: '',
+        stderr: 'cd: $dir: No such directory\n',
+      );
+    }
+    if (type != FileSystemEntityType.directory) {
+      return ShellResult(
+        exitCode: 1, stdout: '',
+        stderr: 'cd: $dir: Not a directory\n',
+      );
+    }
     state.previousCwd = state.cwd;
     state.cwd = resolved;
     state.env['PWD'] = state.cwd;
@@ -432,6 +458,24 @@ class ShellEngine {
       return execute(trailing);
     }
     return ShellResult.ok;
+  }
+
+  String _stripInlineComments(String cmd) {
+    final buf = StringBuffer();
+    var inSingle = false;
+    var inDouble = false;
+    for (var i = 0; i < cmd.length; i++) {
+      final c = cmd[i];
+      if (c == '\'') { inSingle = !inSingle; buf.write(c); continue; }
+      if (c == '"') { inDouble = !inDouble; buf.write(c); continue; }
+      if (c == '\\') { buf.write(c); i++; if (i < cmd.length) { buf.write(cmd[i]); } continue; }
+      if (!inSingle && !inDouble && c == '#' &&
+           (i == 0 || cmd[i - 1] == ' ' || cmd[i - 1] == '\t' ||
+            cmd[i - 1] == ';' || cmd[i - 1] == '|' || cmd[i - 1] == '&' ||
+            cmd[i - 1] == '(' || cmd[i - 1] == '{')) { break; }
+      buf.write(c);
+    }
+    return buf.toString();
   }
 
   // ===========================================================================
@@ -445,16 +489,20 @@ class ShellEngine {
         trimmed.startsWith('while ') || trimmed.startsWith('while\t') ||
         trimmed.startsWith('until ') || trimmed.startsWith('until\t') ||
         trimmed.startsWith('case ') || trimmed.startsWith('case\t') ||
-        trimmed.startsWith('function ') || trimmed.startsWith('function\t') ||
+        trimmed.startsWith('select ') || trimmed.startsWith('select\t') ||
         trimmed.startsWith('{') ||
         trimmed.startsWith('((') ||
-        trimmed.startsWith('[[ ') || trimmed.startsWith('[[') ||
-        cmd.contains('function ')) {
+        trimmed.startsWith('[[ ') || trimmed.startsWith('[[')) {
       return true;
     }
-    if (RegExp(
-      r'\b(if|for|while|until|case|function|then|else|elif|fi|do|done|esac|select)\b',
-    ).hasMatch(cmd)) {
+    // Strip quoted strings to avoid false positives
+    var stripped = cmd.replaceAll(RegExp(r"'[^']*'"), '');
+    stripped = stripped.replaceAll(RegExp(r'"[^"]*"'), '');
+    if (RegExp(r'(^|[;&|}])\s*(if|for|while|until|case|function|select)\b')
+        .hasMatch(stripped)) {
+      return true;
+    }
+    if (RegExp(r'\b(then|else|elif|fi|do|done|esac)\b').hasMatch(stripped)) {
       return true;
     }
     return false;
@@ -517,12 +565,33 @@ class ShellEngine {
         if (current.isNotEmpty) { tokens.add(current.toString()); current.clear(); }
       } else if (c == '>' || c == '<' || c == '&') {
         if (current.isNotEmpty) { tokens.add(current.toString()); current.clear(); }
-        if (c == '>' && i + 1 < cmd.length && cmd[i + 1] == '>') { i++; }
-        else if (c == '<' && i + 1 < cmd.length && cmd[i + 1] == '<') {
-          i++;
-          if (i + 1 < cmd.length && cmd[i + 1] == '<') i++;
-        } else if (c == '&' && i + 1 < cmd.length && cmd[i + 1] == '>') { i++; }
-        else if (c == '>' && i + 1 < cmd.length && cmd[i + 1] == '&') { i++; }
+        if (c == '>') {
+          if (i + 1 < cmd.length) {
+            if (cmd[i + 1] == '>') { tokens.add('>>'); i++; }
+            else if (cmd[i + 1] == '&') { tokens.add('>&'); i++; }
+            else if (cmd[i + 1] == '|') { tokens.add('>|'); i++; }
+            else { tokens.add('>'); }
+          } else { tokens.add('>'); }
+        } else if (c == '<') {
+          if (i + 1 < cmd.length && cmd[i + 1] == '<') {
+            i++;
+            if (i + 1 < cmd.length && cmd[i + 1] == '<') { tokens.add('<<<'); i++; }
+            else { tokens.add('<<'); }
+          } else if (i + 1 < cmd.length && cmd[i + 1] == '>') { tokens.add('<>'); i++; }
+          else if (i + 1 < cmd.length && cmd[i + 1] == '&') { tokens.add('<&'); i++; }
+          else { tokens.add('<'); }
+        } else if (c == '&') {
+          if (i + 1 < cmd.length && cmd[i + 1] == '>') {
+            i++;
+            if (i + 1 < cmd.length && cmd[i + 1] == '>') {
+              tokens.add('&>>'); i++;
+            } else {
+              tokens.add('&>');
+            }
+          } else {
+            tokens.add('&');
+          }
+        }
       } else {
         current.write(c);
       }
@@ -564,6 +633,7 @@ class ShellEngine {
     var depth = 0;
     var inSingle = false;
     var inDouble = false;
+    var inBracketTest = false;
 
     void flush(int end, [_CompoundOp? op]) {
       final s = cmd.substring(start, end).trim();
@@ -590,6 +660,19 @@ class ShellEngine {
       if (c == ')' || c == '}') { depth--; continue; }
       if (depth > 0) continue;
 
+      // Track [[ ... ]] to avoid splitting &&/|| inside test expressions
+      if (c == '[' && i + 1 < cmd.length && cmd[i + 1] == '[') {
+        inBracketTest = true;
+        i++;
+        continue;
+      }
+      if (c == ']' && i + 1 < cmd.length && cmd[i + 1] == ']') {
+        inBracketTest = false;
+        i++;
+        continue;
+      }
+      if (inBracketTest) continue;
+
       if (c == ';') {
         flush(i, _CompoundOp.semicolon);
       } else if (c == '&' && i + 1 < cmd.length && cmd[i + 1] == '&') {
@@ -615,6 +698,37 @@ class ShellEngine {
     while (i < tokens.length) {
       final t = tokens[i];
 
+      // Handle <digit> followed by redirect operator (e.g., "2" ">" -> fd 2)
+      if (i + 1 < tokens.length) {
+        final next = tokens[i + 1];
+        if (RegExp(r'^\d+$').hasMatch(t)) {
+          if (next == '>' && i + 2 < tokens.length) {
+            redirects.add(RedirectInfo(
+              srcFd: int.parse(t), kind: RedirectKind.output,
+              target: tokens[i + 2],
+            ));
+            i += 3; continue;
+          }
+          if (next == '>>' && i + 2 < tokens.length) {
+            redirects.add(RedirectInfo(
+              srcFd: int.parse(t), kind: RedirectKind.output,
+              target: tokens[i + 2], isAppend: true,
+            ));
+            i += 3; continue;
+          }
+          if (next == '>&' && i + 2 < tokens.length) {
+            final dstFd = int.tryParse(tokens[i + 2]);
+            if (dstFd != null) {
+              redirects.add(RedirectInfo(
+                srcFd: int.parse(t), kind: RedirectKind.fdMerge,
+                target: '', dstFd: dstFd,
+              ));
+              i += 3; continue;
+            }
+          }
+        }
+      }
+
       if (t == '>' && i + 1 < tokens.length) {
         redirects.add(RedirectInfo(
           srcFd: 1, kind: RedirectKind.output, target: tokens[i + 1],
@@ -623,17 +737,6 @@ class ShellEngine {
       } else if (t == '>>' && i + 1 < tokens.length) {
         redirects.add(RedirectInfo(
           srcFd: 1, kind: RedirectKind.output, target: tokens[i + 1],
-          isAppend: true,
-        ));
-        i += 2;
-      } else if (t == '2>' && i + 1 < tokens.length) {
-        redirects.add(RedirectInfo(
-          srcFd: 2, kind: RedirectKind.error, target: tokens[i + 1],
-        ));
-        i += 2;
-      } else if (t == '2>>' && i + 1 < tokens.length) {
-        redirects.add(RedirectInfo(
-          srcFd: 2, kind: RedirectKind.error, target: tokens[i + 1],
           isAppend: true,
         ));
         i += 2;
@@ -648,21 +751,19 @@ class ShellEngine {
           isAppend: true,
         ));
         i += 2;
-      } else if (t.endsWith('>&1') || t.endsWith('>&2')) {
-        final parts = t.split('>&');
-        if (parts.length == 2) {
-          final srcFd = int.tryParse(parts[0]);
-          final dstFd = int.tryParse(parts[1]);
-          if (srcFd != null && dstFd != null) {
-            redirects.add(RedirectInfo(
-              srcFd: srcFd, kind: RedirectKind.fdMerge, target: '',
-              dstFd: dstFd,
-            ));
-            i++;
-            continue;
-          }
+      } else if (t == '<' && i + 1 < tokens.length) {
+        redirects.add(RedirectInfo(
+          srcFd: 0, kind: RedirectKind.input, target: tokens[i + 1],
+        ));
+        i += 2;
+      } else if (t == '>&' && i + 1 < tokens.length) {
+        final dstFd = int.tryParse(tokens[i + 1]);
+        if (dstFd != null) {
+          redirects.add(RedirectInfo(
+            srcFd: 1, kind: RedirectKind.fdMerge, target: '', dstFd: dstFd,
+          ));
         }
-        baseTokens.add(t); i++;
+        i += 2;
       } else {
         baseTokens.add(t);
         i++;
@@ -670,12 +771,12 @@ class ShellEngine {
     }
 
     if (redirects.isEmpty) return null;
-    return ParsedRedirects(baseTokens.join(' '), redirects);
+    return ParsedRedirects(baseTokens.join(' '), redirects, baseTokens);
   }
 
-  String _existingContent(String abs) {
+  Future<String> _existingContent(String abs) async {
     try {
-      return File(abs).readAsStringSync();
+      return await File(abs).readAsString();
     } catch (_) {
       return '';
     }

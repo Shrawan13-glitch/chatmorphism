@@ -32,6 +32,7 @@ class ShellState {
     'SHELL': '/bin/kino-vfs',
     'USER': 'kino',
     'TERM': 'xterm-256color',
+    'PATH': '/usr/local/bin:/usr/bin:/bin',
     'PS1': r'\u@\h:\w\$ ',
     'PS2': '> ',
     'PS4': '+ ',
@@ -113,7 +114,7 @@ class ShellState {
 
   final Stopwatch shellTimer = Stopwatch()..start();
 
-  String pipeStatusString = '0';
+  List<int> pipeStatus = [0];
   String underscore = '';
   final Random random = Random();
 
@@ -163,7 +164,7 @@ class ShellState {
     if (name == 'BASHPID') return pid.toString();
     if (name == '_') return underscore;
     if (name == '-') return currentFlags();
-    if (name == 'PIPESTATUS') return pipeStatusString;
+    if (name == 'PIPESTATUS') return pipeStatus.join(' ');
     if (name == 'BASH_VERSION') return '5.2.26(1)-kino';
     if (name == 'BASH_VERSINFO') return '5';
     if (name == 'MACHTYPE') {
@@ -211,7 +212,9 @@ class ShellState {
   }
 
   String expandPrompt(String ps) {
-    return ps
+    // Protect literal backslashes from being consumed by \X sequences
+    var result = ps.replaceAll(r'\\', '\x01');
+    result = result
         .replaceAll(r'\h', _getHostname())
         .replaceAll(r'\H', _getHostname())
         .replaceAll(r'\u', env['USER'] ?? 'kino')
@@ -227,10 +230,11 @@ class ShellState {
         .replaceAll(r'\n', '\n')
         .replaceAll(r'\r', '\r')
         .replaceAll(r'\e', '\x1b')
-        .replaceAll(r'\\', '\\')
         .replaceAll(r'\$', env['USER'] == 'root' ? '#' : r'$')
         .replaceAll(r'\!', (history.length + 1).toString())
         .replaceAll(r'\#', (history.length + 1).toString());
+    // Restore literal backslashes
+    return result.replaceAll('\x01', '\\');
   }
 
   String _getHostname() {

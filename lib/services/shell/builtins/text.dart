@@ -88,6 +88,7 @@ Future<ShellResult> _cmdPrintf(ShellContext ctx, List<String> args) async {
   var fmt = format;
 
   fmt = fmt
+      .replaceAll(r'\\', '\x01')
       .replaceAll(r'\n', '\n')
       .replaceAll(r'\t', '\t')
       .replaceAll(r'\r', '\r')
@@ -95,9 +96,9 @@ Future<ShellResult> _cmdPrintf(ShellContext ctx, List<String> args) async {
       .replaceAll(r'\f', '\x0c')
       .replaceAll(r'\v', '\x0b')
       .replaceAll(r'\a', '\x07')
-      .replaceAll(r'\\', '\\')
       .replaceAll(r'\e', '\x1b')
-      .replaceAll(r'\0', '\x00');
+      .replaceAll(r'\0', '\x00')
+      .replaceAll('\x01', '\\');
 
   final output = StringBuffer();
   var i = 0;
@@ -409,9 +410,7 @@ Future<ShellResult> _cmdWc(ShellContext ctx, List<String> args) async {
     try {
       final content = await ctx.vfs.readFileAsString(target);
       final lines = content.split('\n');
-      final lineCount = content.isEmpty
-          ? 0
-          : content.endsWith('\n') ? lines.length - 1 : lines.length;
+      final lineCount = content.isEmpty ? 0 : lines.length - 1;
       final wordCount =
           content.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
       final charCount = content.length;

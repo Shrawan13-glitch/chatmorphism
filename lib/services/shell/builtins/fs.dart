@@ -26,17 +26,20 @@ Future<ShellResult> _cmdLs(ShellContext ctx, List<String> args) async {
   var dirs = <String>[];
 
   for (final arg in args) {
-    if (arg == '-la' || arg == '-al') {
-      showAll = true;
-      longFormat = true;
-    } else if (arg == '-l') {
-      longFormat = true;
-    } else if (arg == '-a') {
-      showAll = true;
+    if (arg == '--') {
+      // end of options
     } else if (arg.startsWith('-')) {
-      return ShellResult(
-        exitCode: 1, stdout: '', stderr: 'ls: invalid option: $arg',
-      );
+      for (var j = 1; j < arg.length; j++) {
+        switch (arg[j]) {
+          case 'l': longFormat = true;
+          case 'a': showAll = true;
+          default:
+            return ShellResult(
+              exitCode: 1, stdout: '',
+              stderr: 'ls: invalid option: -${arg[j]}\n',
+            );
+        }
+      }
     } else {
       dirs.add(arg);
     }

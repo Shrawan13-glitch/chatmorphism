@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert' show utf8, LineSplitter;
 import 'dart:io' show stdin;
 import '../shell_builtin.dart';
 import '../shell_result.dart';
@@ -16,8 +18,9 @@ Future<ShellResult> _cmdDeclare(ShellContext ctx, List<String> args) async {
     final buf = StringBuffer();
     ctx.state.env.forEach((k, v) => buf.writeln('declare -- $k="$v"'));
     ctx.state.arrays.forEach((k, v) {
-      buf.writeln(
-          'declare -a $k=(${v.map((s) => '"$s"').join(' ')})');
+      final indexed = v.asMap().entries
+          .map((e) => '[${e.key}]="${e.value}"').join(' ');
+      buf.writeln('declare -a $k=($indexed)');
     });
     ctx.state.assocArrays.forEach((k, v) {
       buf.writeln(
@@ -94,10 +97,11 @@ Future<ShellResult> _cmdDeclare(ShellContext ctx, List<String> args) async {
       final isArr = ctx.state.arrays.containsKey(args[i]);
       final isAss = ctx.state.assocArrays.containsKey(args[i]);
       if (isArr) {
+        final indexed = ctx.state.arrays[args[i]]!.asMap().entries
+            .map((e) => '[${e.key}]="${e.value}"').join(' ');
         return ShellResult(
           exitCode: 0,
-          stdout:
-              'declare -a ${args[i]}=(${ctx.state.arrays[args[i]]!.map((s) => '"$s"').join(' ')})\n',
+          stdout: 'declare -a ${args[i]}=($indexed)\n',
           stderr: '',
         );
       }
@@ -120,6 +124,28 @@ Future<ShellResult> _cmdDeclare(ShellContext ctx, List<String> args) async {
   return ShellResult.ok;
 }
 
+Future<String?> _readLineAsync() async {
+  final completer = Completer<String?>();
+  String? line;
+  final subscription = stdin.transform(utf8.decoder)
+      .transform(const LineSplitter())
+      .listen(
+    (data) {
+      if (!completer.isCompleted) {
+        line = data;
+        completer.complete(data);
+      }
+    },
+    onDone: () {
+      if (!completer.isCompleted) completer.complete(null);
+    },
+    cancelOnError: true,
+  );
+  line = await completer.future;
+  await subscription.cancel();
+  return line;
+}
+
 List<String> _splitArrayValues(String s) {
   final parts = <String>[];
   var inSingle = false;
@@ -140,7 +166,10 @@ List<String> _splitArrayValues(String s) {
     }
     if (c == '\'') { inSingle = true; continue; }
     if (c == '"') { inDouble = true; continue; }
-    if (c == ' ' || c == '\t') {
+    if (c == '\\' && i + 1 < s.length) {
+      i++;
+      current.write(s[i]);
+    } else if (c == ' ' || c == '\t') {
       if (current.isNotEmpty) { parts.add(current.toString()); current.clear(); }
     } else {
       current.write(c);
@@ -197,7 +226,7 @@ Future<ShellResult> _cmdReadarray(ShellContext ctx, List<String> args) async {
     final lines = <String>[];
     var count = 0;
     while (maxLines < 0 || count < maxLines) {
-      final line = stdin.readLineSync();
+      final line = await _readLineAsync();
       if (line == null) break;
       if (skipLines > 0) { skipLines--; continue; }
       lines.add(line);
